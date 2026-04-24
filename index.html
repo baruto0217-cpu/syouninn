@@ -2191,6 +2191,9 @@ function setBadge(id, count) {
 }
 
 // 通知一覧を表示
+// 通知データをキャッシュ
+let _notifCache = [];
+
 async function loadNotifList() {
   const el = document.getElementById('notif-list');
   if (!el) return;
@@ -2205,77 +2208,138 @@ async function loadNotifList() {
   if (error) { el.innerHTML = '<div class="loading">読み込みエラー</div>'; return; }
   if (!data?.length) { el.innerHTML = '<div class="loading">通知はありません</div>'; return; }
 
-  const TYPE_ICON = {
-    approval_request: '🔔',
-    approved:         '✅',
-    rejected:         '↩️',
-  };
+  _notifCache = data;
+  renderNotifList(data);
+}
+
+function renderNotifList(data) {
+  const el = document.getElementById('notif-list');
+  if (!el) return;
 
   el.innerHTML = data.map(n => {
     let p = {};
     try { p = JSON.parse(n.message); } catch {}
     const unread = !n.is_read;
-    const bodyLines = (p.body || '').split('\n').map(l =>
-      l.startsWith('【') ? `<span style="font-weight:600;color:var(--red-dark)">${l}</span>` :
-      l === '' ? '<br>' : l
-    ).join('<br>');
 
-    // 差し戻しは赤、承認済みは緑、承認依頼はデフォルト
     const borderColor =
-      p.type === 'rejected'         ? 'var(--red)'   :
-      p.type === 'approved'         ? '#27ae60'       :
-      p.type === 'approval_request' ? 'var(--gray-300)' : 'var(--gray-300)';
+      p.type === 'rejected'         ? 'var(--red)' :
+      p.type === 'approved'         ? '#27ae60'    : 'var(--gray-300)';
+
     const bgColor =
       unread && p.type === 'rejected'         ? '#fdf2f2' :
       unread && p.type === 'approved'         ? '#f0faf4' :
-      unread && p.type === 'approval_request' ? 'var(--red-light)' : 'var(--white)';
+      unread && p.type === 'approval_request' ? '#fff8f8' : 'var(--white)';
 
-    // リンクボタン
-    const linkBtn = p.link === 'approval'
-      ? `<button class="btn btn-primary" style="padding:4px 12px;font-size:11px;margin-top:8px"
-           onclick="event.stopPropagation();showPage('approval')">承認待ちを確認</button>`
-      : p.link === 'list'
-      ? `<button class="btn btn-secondary" style="padding:4px 12px;font-size:11px;margin-top:8px"
-           onclick="event.stopPropagation();showPage('list')">申請一覧を確認</button>`
-      : '';
+    // タイトルからアイコンを決定
+    const icon =
+      p.type === 'approved'         ? '✅' :
+      p.type === 'rejected'         ? '↩️' :
+      p.type === 'approval_request' ? '🔔' : '📌';
 
-    return `<div class="notif-item ${unread ? 'unread' : ''}" id="notif-${n.id}"
-      style="border-left:3px solid ${borderColor};padding-left:12px;background:${bgColor};border-radius:0 var(--radius) var(--radius) 0;margin-bottom:8px;"
-      onclick="handleNotifClick('${n.id}', '${p.link || ''}', '${n.application_id || ''}', this)">
-      <div class="notif-title">
-        ${unread ? '<span class="notif-dot"></span>' : ''}
-        ${p.title || '通知'}
-      </div>
-      <div class="notif-body" style="display:block;margin-top:6px;font-size:12px;color:var(--gray-700);line-height:1.8;">${bodyLines}</div>
-      ${linkBtn}
-      <div class="notif-meta" style="margin-top:6px;">${formatDate(n.created_at)}${unread ? ' ・ <span style="color:var(--red);font-weight:600">未読</span>' : ''}</div>
-    </div>`;
+    // タイトルの安全なエスケープ（シングルクォートを除去）
+    const safeTitle = (p.title || '通知').replace(/'/g, '').replace(/"/g, '');
+
+    return `
+      <div class="notif-item ${unread ? 'unread' : ''}"
+        id="notif-${n.id}"
+        data-notif-id="${n.id}"
+        style="border-left:3px solid ${borderColor};padding-left:12px;
+               background:${bgColor};border-radius:0 var(--radius) var(--radius) 0;
+               margin-bottom:6px;cursor:pointer;"
+        onclick="toggleNotif('${n.id}')">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+          <div class="notif-title" style="display:flex;align-items:center;gap:8px;flex:1;min-width:0;">
+            ${unread ? '<span class="notif-dot" style="flex-shrink:0"></span>' : ''}
+            <span style="font-size:14px;flex-shrink:0">${icon}</span>
+            <span style="font-weight:${unread ? '700' : '600'};font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+              ${safeTitle}
+            </span>
+          </div>
+          <div style="font-size:11px;color:var(--gray-500);flex-shrink:0;white-space:nowrap;">
+            ${formatDate(n.created_at)}
+            <span style="margin-left:4px;font-size:12px;" id="arrow-${n.id}">▼</span>
+          </div>
+        </div>
+        <!-- 詳細（初期非表示） -->
+        <div id="notif-detail-${n.id}" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--gray-100);">
+        </div>
+      </div>`;
   }).join('');
 }
 
+async function toggleNotif(id) {
+  const detailEl = document.getElementById('notif-detail-' + id);
+  const arrowEl  = document.getElementById('arrow-' + id);
+  const itemEl   = document.getElementById('notif-' + id);
+  if (!detailEl) return;
+
+  const isOpen = detailEl.style.display !== 'none';
+
+  if (isOpen) {
+    // 閉じる
+    detailEl.style.display = 'none';
+    if (arrowEl) arrowEl.textContent = '▼';
+  } else {
+    // 開く：詳細を描画
+    const n = _notifCache.find(x => x.id === id);
+    if (n) renderNotifDetail(n, detailEl);
+    detailEl.style.display = '';
+    if (arrowEl) arrowEl.textContent = '▲';
+
+    // 未読なら既読に
+    if (itemEl?.classList.contains('unread')) {
+      itemEl.classList.remove('unread');
+      itemEl.querySelector('.notif-dot')?.remove();
+      const titleEl = itemEl.querySelector('.notif-title span:last-child');
+      if (titleEl) titleEl.style.fontWeight = '600';
+      await sb.from('notifications').update({ is_read: true }).eq('id', id);
+      // キャッシュも更新
+      const cached = _notifCache.find(x => x.id === id);
+      if (cached) cached.is_read = true;
+      await refreshBadges();
+    }
+  }
+}
+
+function renderNotifDetail(n, el) {
+  let p = {};
+  try { p = JSON.parse(n.message); } catch {}
+
+  // 本文の整形（【...】を強調）
+  const bodyHTML = (p.body || '').split('\n').map(line => {
+    if (!line) return '<br>';
+    if (line.startsWith('【')) {
+      return '<div style="font-weight:700;color:var(--gray-900);margin-top:4px;">' + escHtml(line) + '</div>';
+    }
+    return '<div style="color:var(--gray-700);">' + escHtml(line) + '</div>';
+  }).join('');
+
+  // ジャンプボタン
+  const appId = n.application_id || '';
+  const link  = p.link || '';
+  const linkBtn = link === 'approval'
+    ? `<button class="btn btn-primary" style="padding:5px 14px;font-size:12px;margin-top:10px"
+         onclick="event.stopPropagation();showPage('approval')">承認待ちを確認 →</button>`
+    : link === 'list'
+    ? `<button class="btn btn-secondary" style="padding:5px 14px;font-size:12px;margin-top:10px"
+         onclick="event.stopPropagation();showPage('list')">申請一覧を確認 →</button>`
+    : '';
+
+  el.innerHTML =
+    '<div style="font-size:12px;line-height:1.9;">' + bodyHTML + '</div>' + linkBtn;
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 async function handleNotifClick(id, link, appId, el) {
-  // 本文トグル
-  const body = el.querySelector('.notif-body');
-  if (body) body.style.display = body.style.display === 'none' ? '' : 'none';
-
-  // 未読なら既読に
-  if (el.classList.contains('unread')) {
-    el.classList.remove('unread');
-    el.querySelector('.notif-dot')?.remove();
-    await sb.from('notifications').update({ is_read: true }).eq('id', id);
-    await refreshBadges();
-  }
-
-  // リンク先へジャンプ
-  if (link === 'approval') showPage('approval');
-  else if (link === 'list' && appId) {
-    showPage('list');
-    // 該当申請をハイライト（少し待って一覧が描画されてから）
-    setTimeout(() => {
-      const item = document.querySelector(`[onclick*="${appId}"]`);
-      if (item) item.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, 500);
-  }
+  // 旧互換: toggleNotifに委譲
+  toggleNotif(id);
 }
 
 async function markAllRead() {
