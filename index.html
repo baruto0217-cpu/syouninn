@@ -1074,15 +1074,43 @@
 </div>
 
 <!-- 差し戻しモーダル -->
-<div id="rejection-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:200;align-items:center;justify-content:center;">
-  <div style="background:var(--white);border-radius:10px;padding:28px;width:90%;max-width:440px;box-shadow:0 8px 32px rgba(0,0,0,0.18);">
-    <div style="font-size:15px;font-weight:700;margin-bottom:6px;color:var(--gray-900)">差し戻し理由の入力</div>
-    <div style="font-size:12px;color:var(--gray-500);margin-bottom:16px;">差し戻し理由は申請者に通知されます。</div>
-    <div class="form-row">
-      <label>差し戻し理由<span class="required">*</span></label>
-      <textarea id="rejection-reason" style="min-height:100px" placeholder="理由を具体的に記入してください"></textarea>
+<div id="rejection-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:200;align-items:center;justify-content:center;overflow-y:auto;padding:20px;">
+  <div style="background:var(--white);border-radius:10px;width:90%;max-width:480px;box-shadow:0 8px 32px rgba(0,0,0,0.2);margin:auto;">
+    <div style="background:var(--red);border-radius:10px 10px 0 0;padding:14px 20px;">
+      <div style="font-size:15px;font-weight:700;color:#fff;">↩️ 差し戻し理由の入力</div>
+      <div style="font-size:11px;color:rgba(255,255,255,0.8);margin-top:2px;">申請者に通知されます。具体的に記載してください。</div>
     </div>
-    <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:16px;">
+    <div style="padding:20px;">
+      <div class="form-row">
+        <label style="font-size:12px;font-weight:700;margin-bottom:8px;display:block;">問題のある項目（複数選択可）</label>
+        <div id="rejection-checklist" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;padding:6px 8px;background:var(--gray-100);border-radius:var(--radius);">
+            <input type="checkbox" value="記載内容が不足している" style="accent-color:var(--red)"> 記載内容が不足
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;padding:6px 8px;background:var(--gray-100);border-radius:var(--radius);">
+            <input type="checkbox" value="金額・数量に誤りがある" style="accent-color:var(--red)"> 金額・数量に誤り
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;padding:6px 8px;background:var(--gray-100);border-radius:var(--radius);">
+            <input type="checkbox" value="添付書類が不足している" style="accent-color:var(--red)"> 添付書類が不足
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;padding:6px 8px;background:var(--gray-100);border-radius:var(--radius);">
+            <input type="checkbox" value="申請期限・日程に問題がある" style="accent-color:var(--red)"> 日程に問題あり
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;padding:6px 8px;background:var(--gray-100);border-radius:var(--radius);">
+            <input type="checkbox" value="承認経路が正しくない" style="accent-color:var(--red)"> 承認経路が不正
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;padding:6px 8px;background:var(--gray-100);border-radius:var(--radius);">
+            <input type="checkbox" value="規程・ルールに反している" style="accent-color:var(--red)"> 規程違反
+          </label>
+        </div>
+      </div>
+      <div class="form-row" style="margin-top:12px">
+        <label>具体的な指摘内容<span class="required">*</span></label>
+        <textarea id="rejection-reason" style="min-height:90px" placeholder="例：〇〇の欄に具体的な日時・金額の根拠を記載してください。また〇〇書類の添付が必要です。"></textarea>
+      </div>
+      <div id="rejection-preview" style="display:none;margin-top:10px;background:var(--red-light);border-left:3px solid var(--red);border-radius:0 var(--radius) var(--radius) 0;padding:10px 12px;font-size:12px;color:var(--red-dark);line-height:1.7;"></div>
+    </div>
+    <div style="padding:0 20px 16px;display:flex;justify-content:flex-end;gap:10px;">
       <button class="btn btn-secondary" onclick="closeRejectionModal()">キャンセル</button>
       <button class="btn btn-primary" style="background:var(--red)" onclick="confirmRejection()">差し戻す</button>
     </div>
@@ -1106,6 +1134,7 @@ function initSupabase(url, key) {
 // =====================================================
 // 状態管理
 // =====================================================
+const NL = '\n'; // テンプレートリテラル内の改行文字
 let currentUser = null;
 let currentUserProfile = null;
 let selectedType = null;
@@ -1841,10 +1870,25 @@ function closeRejectionModal() {
 }
 
 async function confirmRejection() {
-  const reason = document.getElementById('rejection-reason').value.trim();
-  if (!reason) { showToast('差し戻し理由を入力してください', 'error'); return; }
+  const freeText = document.getElementById('rejection-reason').value.trim();
+  const checked  = [...document.querySelectorAll('#rejection-checklist input:checked')]
+    .map(cb => cb.value);
+
+  if (!freeText && !checked.length) {
+    showToast('差し戻し理由を入力してください', 'error'); return;
+  }
+
+  // 選択肢＋自由記述を結合
+  let reason = '';
+  if (checked.length) reason += `【問題点】${checked.join('、')}
+`;
+  if (freeText)       reason += `【詳細】${freeText}`;
+  reason = reason.trim();
+
   const id = _pendingRejectionId;
   closeRejectionModal();
+  // チェックボックスをリセット
+  document.querySelectorAll('#rejection-checklist input').forEach(cb => cb.checked = false);
   await executeApproval(id, 'rejected', reason);
 }
 
@@ -1871,12 +1915,17 @@ async function executeApproval(id, action, reason) {
 
   await sb.from('applications').update(updatePayload).eq('id', id);
 
-  // 通知送信
+  // 通知送信（申請情報をフル取得）
   const { data: appData } = await sb.from('applications')
-    .select('title, applicant_id, type').eq('id', id).single();
+    .select('title, applicant_id, type, users!applicant_id(name, department)')
+    .eq('id', id).single();
+  const appTitle   = appData?.title || '申請';
+  const appType    = TYPE_LABELS[appData?.type] || appData?.type || '';
+  const applicantName = appData?.users?.name || '';
+  const approverName  = currentUserProfile?.name || '';
 
   if (action === 'approved' && newStep > step && newStep <= totalSteps) {
-    // 次ステップの承認者へ
+    // 中間承認 → 次ステップの承認者へ
     const { data: nextApproval } = await sb.from('approvals')
       .select('approver_id').eq('application_id', id).eq('step', newStep).single();
     if (nextApproval?.approver_id) {
@@ -1884,35 +1933,55 @@ async function executeApproval(id, action, reason) {
         user_id: nextApproval.approver_id, application_id: id,
         message: JSON.stringify({
           type:  'approval_request',
-          title: `【承認依頼】${appData?.title || '申請'}`,
-          body:  `前ステップの承認が完了しました。あなたの承認が必要です。`,
-          link:  'approval',
+          title: `【承認依頼】${appTitle}`,
+          body:  [
+            `申請者：${applicantName}`,
+            `書類種別：${appType}`,
+            `ステップ${step}の承認が完了しました。`,
+            `次はあなた（ステップ${newStep}）の承認が必要です。`,
+            `「承認待ち」タブから内容を確認してください。`,
+          ].join('\n'),
+          link: 'approval',
         }), is_read: false,
       });
     }
   } else if (action === 'approved' && newStatus === 'approved') {
-    // 承認完了 → 申請者へ
+    // 最終承認完了 → 申請者へ
     if (appData?.applicant_id) {
       await sb.from('notifications').insert({
         user_id: appData.applicant_id, application_id: id,
         message: JSON.stringify({
           type:  'approved',
-          title: `【承認完了】${appData.title}`,
-          body:  `申請がすべてのステップで承認されました。`,
-          link:  'list',
+          title: `✅【承認完了】${appTitle}`,
+          body:  [
+            `書類種別：${appType}`,
+            `承認者：${approverName}`,
+            `すべてのステップで承認が完了しました。`,
+          ].join('\n'),
+          link: 'list',
         }), is_read: false,
       });
     }
+  } else if (action === 'approved' && step === 1 && newStatus === 'pending') {
+    // ステップ1承認で申請者にも中間通知
+    // ※ 次ステップ通知は上のブロックで送信済み
   } else if (action === 'rejected') {
-    // 差し戻し → 申請者へ
+    // 差し戻し → 申請者へ（理由の詳細付き）
     if (appData?.applicant_id) {
       await sb.from('notifications').insert({
         user_id: appData.applicant_id, application_id: id,
         message: JSON.stringify({
           type:  'rejected',
-          title: `【差し戻し】${appData.title}`,
-          body:  `差し戻し理由：${reason || '理由なし'}`,
-          link:  'list',
+          title: `↩️【差し戻し】${appTitle}`,
+          body:  [
+            `書類種別：${appType}`,
+            `差し戻し担当：${approverName}（ステップ${step}）`,
+            ``,
+            `${reason || '理由の記載なし'}`,
+            ``,
+            `申請一覧の「差し戻し」タブから内容を修正して再提出してください。`,
+          ].join('\n'),
+          link: 'list',
         }), is_read: false,
       });
     }
@@ -2145,16 +2214,41 @@ async function loadNotifList() {
   el.innerHTML = data.map(n => {
     let p = {};
     try { p = JSON.parse(n.message); } catch {}
-    const icon = TYPE_ICON[p.type] || '📌';
     const unread = !n.is_read;
+    const bodyLines = (p.body || '').split('\n').map(l =>
+      l.startsWith('【') ? `<span style="font-weight:600;color:var(--red-dark)">${l}</span>` :
+      l === '' ? '<br>' : l
+    ).join('<br>');
+
+    // 差し戻しは赤、承認済みは緑、承認依頼はデフォルト
+    const borderColor =
+      p.type === 'rejected'         ? 'var(--red)'   :
+      p.type === 'approved'         ? '#27ae60'       :
+      p.type === 'approval_request' ? 'var(--gray-300)' : 'var(--gray-300)';
+    const bgColor =
+      unread && p.type === 'rejected'         ? '#fdf2f2' :
+      unread && p.type === 'approved'         ? '#f0faf4' :
+      unread && p.type === 'approval_request' ? 'var(--red-light)' : 'var(--white)';
+
+    // リンクボタン
+    const linkBtn = p.link === 'approval'
+      ? `<button class="btn btn-primary" style="padding:4px 12px;font-size:11px;margin-top:8px"
+           onclick="event.stopPropagation();showPage('approval')">承認待ちを確認</button>`
+      : p.link === 'list'
+      ? `<button class="btn btn-secondary" style="padding:4px 12px;font-size:11px;margin-top:8px"
+           onclick="event.stopPropagation();showPage('list')">申請一覧を確認</button>`
+      : '';
+
     return `<div class="notif-item ${unread ? 'unread' : ''}" id="notif-${n.id}"
+      style="border-left:3px solid ${borderColor};padding-left:12px;background:${bgColor};border-radius:0 var(--radius) var(--radius) 0;margin-bottom:8px;"
       onclick="handleNotifClick('${n.id}', '${p.link || ''}', '${n.application_id || ''}', this)">
       <div class="notif-title">
         ${unread ? '<span class="notif-dot"></span>' : ''}
-        ${icon} ${p.title || '通知'}
+        ${p.title || '通知'}
       </div>
-      <div class="notif-body">${p.body || ''}</div>
-      <div class="notif-meta">${formatDate(n.created_at)}</div>
+      <div class="notif-body" style="display:block;margin-top:6px;font-size:12px;color:var(--gray-700);line-height:1.8;">${bodyLines}</div>
+      ${linkBtn}
+      <div class="notif-meta" style="margin-top:6px;">${formatDate(n.created_at)}${unread ? ' ・ <span style="color:var(--red);font-weight:600">未読</span>' : ''}</div>
     </div>`;
   }).join('');
 }
