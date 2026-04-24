@@ -1841,12 +1841,14 @@ function renderList(items) {
         ${a.status === 'rejected' && a.rejection_reason
           ? `<div style="font-size:11px;color:var(--red);margin-top:3px;">差し戻し理由：${escHtml(a.rejection_reason)}</div>` : ''}
       </div>
-      <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;">
+      <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;flex-wrap:wrap;">
         <button class="btn btn-secondary app-detail" data-id="${a.id}" style="padding:5px 12px;font-size:12px">詳細</button>
         ${(a.status === 'draft' || a.status === 'rejected')
           ? `<button class="btn btn-ghost app-edit" data-id="${a.id}" style="padding:5px 12px;font-size:12px">編集</button>` : ''}
         <button class="btn btn-secondary app-dup" data-id="${a.id}" style="padding:5px 12px;font-size:12px">複製</button>
         <button class="btn btn-secondary app-pdf" data-id="${a.id}" style="padding:5px 12px;font-size:12px">PDF</button>
+        ${a.status === 'draft'
+          ? `<button class="btn btn-secondary app-del" data-id="${a.id}" style="padding:5px 12px;font-size:12px;color:var(--red);border-color:var(--red);">削除</button>` : ''}
         <div class="status-label ${a.status}" style="min-width:56px;text-align:right">${STATUS_LABEL[a.status] || a.status}</div>
       </div>
     </div>`).join('');
@@ -1860,6 +1862,7 @@ function renderList(items) {
     else if (e.target.closest('.app-edit'))  editDraft(id);
     else if (e.target.closest('.app-dup'))   duplicateApp(id);
     else if (e.target.closest('.app-pdf'))   exportPDF(id);
+    else if (e.target.closest('.app-del'))   confirmDeleteApp(id, false);
   };
 }
 
@@ -2140,6 +2143,90 @@ async function editDraft(id) {
 }
 
 // submitApplicationの下書き更新対応（既存関数に追加処理）
+// =====================================================
+// 申請削除
+// =====================================================
+async function confirmDeleteApp(id, isAdmin) {
+  // 対象申請を取得して確認メッセージを組み立てる
+  const target = (isAdmin ? adminAllApps : allApplications).find(a => a.id === id);
+  const title  = target?.title || '申請';
+  const status = target?.status || '';
+
+  // 申請者：draft のみ削除可
+  if (!isAdmin && status !== 'draft') {
+    showToast('削除できるのは下書きのみです', 'error');
+    return;
+  }
+
+  // 確認ダイアログ
+  showConfirmDialog(
+    '申請の削除',
+    `「${title}」を削除します。この操作は取り消せません。`,
+    '削除する',
+    async () => { await deleteApp(id, isAdmin); }
+  );
+}
+
+async function deleteApp(id, isAdmin) {
+  // 関連する approvals・notifications も削除
+  await sb.from('approvals').delete().eq('application_id', id);
+  await sb.from('notifications').delete().eq('application_id', id);
+  const { error } = await sb.from('applications').delete().eq('id', id);
+  if (error) {
+    showToast('削除に失敗しました：' + error.message, 'error');
+    return;
+  }
+  showToast('削除しました', 'success');
+  if (isAdmin) {
+    adminAllApps = adminAllApps.filter(a => a.id !== id);
+    renderAdminApps(adminAllApps);
+  } else {
+    allApplications = allApplications.filter(a => a.id !== id);
+    renderList(allApplications);
+  }
+}
+
+// 汎用確認ダイアログ
+function showConfirmDialog(title, message, confirmLabel, onConfirm) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:500;display:flex;align-items:center;justify-content:center;padding:20px;';
+
+  const dialog = document.createElement('div');
+  dialog.style.cssText = 'background:var(--white);border-radius:10px;padding:24px;width:100%;max-width:400px;box-shadow:0 8px 32px rgba(0,0,0,0.2);';
+
+  const h = document.createElement('div');
+  h.style.cssText = 'font-size:15px;font-weight:700;margin-bottom:10px;color:var(--gray-900);';
+  h.textContent = title;
+
+  const p = document.createElement('div');
+  p.style.cssText = 'font-size:13px;color:var(--gray-700);margin-bottom:20px;line-height:1.6;';
+  p.textContent = message;
+
+  const btns = document.createElement('div');
+  btns.style.cssText = 'display:flex;justify-content:flex-end;gap:10px;';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'btn btn-secondary';
+  cancelBtn.textContent = 'キャンセル';
+  cancelBtn.onclick = () => document.body.removeChild(overlay);
+
+  const confirmBtn = document.createElement('button');
+  confirmBtn.className = 'btn btn-primary';
+  confirmBtn.style.background = 'var(--red)';
+  confirmBtn.textContent = confirmLabel;
+  confirmBtn.onclick = async () => {
+    document.body.removeChild(overlay);
+    await onConfirm();
+  };
+
+  btns.append(cancelBtn, confirmBtn);
+  dialog.append(h, p, btns);
+  overlay.appendChild(dialog);
+  // オーバーレイクリックでキャンセル
+  overlay.onclick = (e) => { if (e.target === overlay) document.body.removeChild(overlay); };
+  document.body.appendChild(overlay);
+}
+
 // =====================================================
 // 申請複製
 // =====================================================
@@ -2932,10 +3019,11 @@ function renderAdminApps(items) {
         <div class="title">${escHtml(a.title)}</div>
         <div class="meta">${escHtml(a.users?.name||'')}（${escHtml(a.users?.department||'')}）・ ${TYPE_LABELS[a.type]||a.type} ・ ${formatDate(a.created_at)}</div>
       </div>
-      <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
+      <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;flex-wrap:wrap;">
         <button class="btn btn-secondary adm-detail" data-id="${a.id}" style="padding:5px 10px;font-size:11px">詳細</button>
         <button class="btn btn-secondary adm-dup"    data-id="${a.id}" style="padding:5px 10px;font-size:11px">複製</button>
         <button class="btn btn-secondary adm-pdf"    data-id="${a.id}" style="padding:5px 10px;font-size:11px">PDF</button>
+        <button class="btn btn-secondary adm-del"    data-id="${a.id}" style="padding:5px 10px;font-size:11px;color:var(--red);border-color:var(--red);">削除</button>
         <div class="status-label ${a.status}">${STATUS_LABEL[a.status]||a.status}</div>
       </div>
     </div>`).join('');
@@ -2946,6 +3034,7 @@ function renderAdminApps(items) {
     if (e.target.closest('.adm-detail') || e.target.closest('.adm-info')) showDetail(id);
     else if (e.target.closest('.adm-dup')) duplicateApp(id);
     else if (e.target.closest('.adm-pdf')) exportPDF(id);
+    else if (e.target.closest('.adm-del')) confirmDeleteApp(id, true);
   };
 }
 
