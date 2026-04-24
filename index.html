@@ -759,7 +759,7 @@
     <div class="nav-tab active" onclick="showPage('list')">申請一覧</div>
     <div class="nav-tab" onclick="showPage('new')">新規申請</div>
     <div class="nav-tab" id="nav-approval" style="display:none" onclick="showPage('approval')">承認待ち</div>
-    <div class="nav-tab" onclick="showPage('mail')">メール送信</div>
+    <div class="nav-tab" id="nav-inbox" onclick="showPage('inbox')">受信ボックス <span id="nav-unread" style="display:none;background:var(--red);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:20px;"></span></div>
     <div class="nav-tab" id="nav-admin" style="display:none" onclick="showPage('admin')">管理者</div>
   </nav>
 
@@ -900,58 +900,32 @@
     </div>
 
     <!-- メール送信ページ -->
-    <div id="page-mail" class="page">
-      <div class="list-header">
-        <h2>承認者へのメール送信</h2>
-      </div>
-      <div class="card">
-        <div class="card-title">送信先の承認者を選択<span class="tag">複数選択可</span></div>
-
-        <!-- 役職フィルター -->
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
-          <button class="btn btn-secondary" style="padding:5px 14px;font-size:12px" onclick="filterApprovers('all', this)">すべて</button>
-          <button class="btn btn-secondary" style="padding:5px 14px;font-size:12px" onclick="filterApprovers('team_leader', this)">係長</button>
-          <button class="btn btn-secondary" style="padding:5px 14px;font-size:12px" onclick="filterApprovers('assistant_chief', this)">補佐</button>
-          <button class="btn btn-secondary" style="padding:5px 14px;font-size:12px" onclick="filterApprovers('section_chief', this)">課長</button>
-          <button class="btn btn-ghost" style="padding:5px 14px;font-size:12px;margin-left:auto" onclick="selectAllApprovers(true)">全選択</button>
-          <button class="btn btn-ghost" style="padding:5px 14px;font-size:12px" onclick="selectAllApprovers(false)">全解除</button>
-        </div>
-
-        <!-- 承認者一覧（役職グループ別） -->
-        <div id="mail-user-list" style="border:1.5px solid var(--gray-300);border-radius:var(--radius);max-height:280px;overflow-y:auto;padding:4px;">
-          <div class="loading">読み込み中...</div>
-        </div>
-
-        <!-- 選択済みバッジ -->
-        <div id="mail-selected-badges" style="margin-top:10px;min-height:28px;display:flex;flex-wrap:wrap;gap:6px;"></div>
+    <div id="page-inbox" class="page">
+      <div class="list-header" style="margin-bottom:8px">
+        <h2>メッセージ</h2>
+        <span id="mail-unread-badge" style="display:none;background:var(--red);color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;"></span>
       </div>
 
-      <div class="card" style="margin-top:12px">
-        <div class="card-title">メール内容</div>
-        <div class="form-row">
-          <label>件名<span class="required">*</span></label>
-          <input type="text" id="mail-subject" placeholder="件名を入力">
-        </div>
-        <div class="form-row">
-          <label>本文<span class="required">*</span></label>
-          <textarea id="mail-body" style="min-height:140px" placeholder="本文を入力"></textarea>
-        </div>
-        <div class="form-row">
-          <label>関連申請（任意）</label>
-          <select id="mail-application">
-            <option value="">選択しない</option>
-          </select>
-        </div>
-        <div class="btn-row">
-          <div id="mail-count-label" style="font-size:13px;color:var(--gray-500)">送信先：0名</div>
-          <button class="btn btn-primary" onclick="sendMail()">送信する</button>
+      <!-- タブ -->
+      <div class="tab-bar" id="mail-tab-bar" style="margin-bottom:16px">
+        <div class="tab active" onclick="switchMailTab('inbox', this)">受信ボックス</div>
+        <div class="tab" onclick="switchMailTab('sent', this)">送信履歴</div>
+      </div>
+
+      <!-- 受信ボックス -->
+      <div id="mail-inbox-section">
+        <div class="card">
+          <div class="card-title">受信ボックス</div>
+          <div id="mail-inbox-list"><div class="loading">読み込み中...</div></div>
         </div>
       </div>
 
       <!-- 送信履歴 -->
-      <div class="card" style="margin-top:12px">
-        <div class="card-title">送信履歴</div>
-        <div id="mail-history"><div class="loading">読み込み中...</div></div>
+      <div id="mail-sent-section" style="display:none">
+        <div class="card">
+          <div class="card-title">送信履歴</div>
+          <div id="mail-history"><div class="loading">読み込み中...</div></div>
+        </div>
       </div>
     </div>
 
@@ -1185,6 +1159,17 @@ async function initApp(user) {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app').style.display = 'block';
   loadApplicationList();
+  // ログイン後に未読メールをチェック
+  setTimeout(async () => {
+    const { data } = await sb.from('notifications')
+      .select('id, message, is_read')
+      .eq('user_id', currentUser.id)
+      .eq('is_read', false);
+    const unread = (data || []).filter(n => {
+      try { return JSON.parse(n.message).type === 'mail'; } catch { return false; }
+    });
+    updateUnreadBadge(unread.length);
+  }, 1000);
 }
 
 // =====================================================
@@ -1295,10 +1280,11 @@ function showPage(name) {
   document.querySelectorAll('.nav-tab')[tabs[name]]?.classList.add('active');
 
   if (name === 'list')     loadApplicationList();
-  if (name === 'new')      resetForm();
+  if (name === 'new' && !window._skipResetForm) resetForm();
   if (name === 'approval') loadApprovalList();
-  if (name === 'mail')     loadMailPage();
+  if (name === 'inbox')    loadMailPage();
   if (name === 'admin')    loadAdminPage();
+  window._skipResetForm = false;
 }
 
 // =====================================================
@@ -1714,7 +1700,24 @@ async function submitApplication() {
   // 選択リセット
   selectedApprovers = {};
 
-  // 通知（承認者へ）は Edge Functions 経由で行う（今はスキップ）
+  // ステップ1の承認者へ通知を自動送信
+  const firstApprover = selectedApprovers[1];
+  if (firstApprover) {
+    const appTitle = formData.title || '申請';
+    await sb.from('notifications').insert({
+      user_id:        firstApprover,
+      application_id: data.id,
+      message: JSON.stringify({
+        type:        'mail',
+        subject:     `【承認依頼】${appTitle}`,
+        body:        `${currentUserProfile?.name || ''}さんから承認依頼が届きました。\n\n書類種別：${TYPE_LABELS[data.type] || data.type}\n件名：${appTitle}\n\n申請一覧の「承認待ち」タブから内容を確認してください。`,
+        sender_id:   currentUser.id,
+        sender_name: currentUserProfile?.name || '',
+        sent_at:     new Date().toISOString(),
+      }),
+      is_read: false,
+    });
+  }
 
   document.getElementById('step3-view').style.display = 'none';
   document.getElementById('complete-view').style.display = 'block';
@@ -1872,6 +1875,69 @@ async function executeApproval(id, action, reason) {
   if (action === 'rejected' && reason) updatePayload.rejection_reason = reason;
 
   await sb.from('applications').update(updatePayload).eq('id', id);
+
+  // 次ステップの承認者または申請者へ通知
+  if (action === 'approved' && newStep > step && newStep <= totalSteps) {
+    // 次ステップの承認者へ通知
+    const { data: nextApproval } = await sb.from('approvals')
+      .select('approver_id, users!approver_id(name)')
+      .eq('application_id', id).eq('step', newStep).single();
+    if (nextApproval?.approver_id) {
+      const { data: appData } = await sb.from('applications').select('title, type').eq('id', id).single();
+      await sb.from('notifications').insert({
+        user_id:        nextApproval.approver_id,
+        application_id: id,
+        message: JSON.stringify({
+          type:        'mail',
+          subject:     `【承認依頼】${appData?.title || '申請'}`,
+          body:        `前ステップの承認が完了しました。\nあなたの承認が必要です。\n\n申請一覧の「承認待ち」タブから内容を確認してください。`,
+          sender_id:   currentUser.id,
+          sender_name: currentUserProfile?.name || '',
+          sent_at:     new Date().toISOString(),
+        }),
+        is_read: false,
+      });
+    }
+  } else if (action === 'approved' && newStatus === 'approved') {
+    // 最終承認完了 → 申請者へ通知
+    const { data: appData } = await sb.from('applications')
+      .select('title, applicant_id').eq('id', id).single();
+    if (appData?.applicant_id) {
+      await sb.from('notifications').insert({
+        user_id:        appData.applicant_id,
+        application_id: id,
+        message: JSON.stringify({
+          type:        'mail',
+          subject:     `【承認完了】${appData.title}`,
+          body:        `申請「${appData.title}」がすべてのステップで承認されました。`,
+          sender_id:   currentUser.id,
+          sender_name: currentUserProfile?.name || '',
+          sent_at:     new Date().toISOString(),
+        }),
+        is_read: false,
+      });
+    }
+  } else if (action === 'rejected') {
+    // 差し戻し → 申請者へ通知
+    const { data: appData } = await sb.from('applications')
+      .select('title, applicant_id').eq('id', id).single();
+    if (appData?.applicant_id) {
+      await sb.from('notifications').insert({
+        user_id:        appData.applicant_id,
+        application_id: id,
+        message: JSON.stringify({
+          type:        'mail',
+          subject:     `【差し戻し】${appData.title}`,
+          body:        `申請「${appData.title}」が差し戻されました。\n\n差し戻し理由：${reason || '理由なし'}\n\n内容を修正して再提出してください。`,
+          sender_id:   currentUser.id,
+          sender_name: currentUserProfile?.name || '',
+          sent_at:     new Date().toISOString(),
+        }),
+        is_read: false,
+      });
+    }
+  }
+
   showToast(action === 'approved' ? '承認しました' : '差し戻しました', action === 'approved' ? 'success' : 'error');
   loadApprovalList();
 }
@@ -1913,53 +1979,51 @@ async function editDraft(id) {
   const { data, error } = await sb.from('applications').select('*').eq('id', id).single();
   if (error || !data) { showToast('読み込みに失敗しました', 'error'); return; }
 
-  // フォームにデータを復元
-  selectedType = data.type;
-  formData = { ...(data.content || {}), title: data.title };
+  // フォームにデータを復元（showPageのresetFormより先に設定）
+  selectedType           = data.type;
+  formData               = { ...(data.content || {}), title: data.title };
   if (data.amount) formData.amount = data.amount;
   window._editingDraftId = id;
-  window._editingStatus  = data.status; // draft or rejected
+  window._editingStatus  = data.status;
+  window._skipResetForm  = true; // showPage内のresetFormをスキップ
 
   showPage('new');
 
-  setTimeout(() => {
-    // 書類種別ボタンを選択状態に
-    document.querySelectorAll('.type-btn').forEach(btn => {
-      const m = btn.getAttribute('onclick')?.match(/selectType\('(\w+)'/);
-      const btnType = m ? m[1] : null;
-      if (btnType === selectedType) {
-        btn.classList.add('selected');
-        const info = document.getElementById('route-info');
-        if (info && ROUTE_DESCRIPTIONS[selectedType]) {
-          info.innerHTML = ROUTE_DESCRIPTIONS[selectedType];
-          info.classList.add('visible');
-        }
-        document.getElementById('btn-next1').disabled = false;
+  // 書類種別ボタンを選択状態に
+  document.querySelectorAll('.type-btn').forEach(btn => {
+    const m = btn.getAttribute('onclick')?.match(/selectType\('(\w+)'/);
+    const btnType = m ? m[1] : null;
+    if (btnType === selectedType) {
+      btn.classList.add('selected');
+      const info = document.getElementById('route-info');
+      if (info && ROUTE_DESCRIPTIONS[selectedType]) {
+        info.innerHTML = ROUTE_DESCRIPTIONS[selectedType];
+        info.classList.add('visible');
       }
-    });
-
-    // ステップ2（入力画面）を直接表示
-    buildDynamicFormFromConfig(selectedType);
-    document.getElementById('step1-view').style.display = 'none';
-    document.getElementById('step2-view').style.display = '';
-    document.getElementById('step3-view').style.display = 'none';
-    document.getElementById('complete-view').style.display = 'none';
-
-    // 差し戻し時：理由を表示バナー
-    const existingBanner = document.getElementById('rejection-banner');
-    if (existingBanner) existingBanner.remove();
-    if (data.status === 'rejected' && data.rejection_reason) {
-      const banner = document.createElement('div');
-      banner.id = 'rejection-banner';
-      banner.style.cssText = 'background:var(--red-light);border:1.5px solid #f5b7b1;border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:var(--red-dark);line-height:1.6;';
-      banner.innerHTML = `<strong>差し戻し理由：</strong>${data.rejection_reason}`;
-      document.getElementById('dynamic-form').insertAdjacentElement('beforebegin', banner);
+      document.getElementById('btn-next1').disabled = false;
     }
+  });
 
-    // ボタンラベル変更
-    const draftBtn = document.querySelector('[onclick="saveDraft()"]');
-    if (draftBtn) draftBtn.textContent = data.status === 'rejected' ? '修正して保存' : '変更を保存';
-  }, 80);
+  // ステップ2（入力画面）を直接表示してフォームを構築・値を復元
+  buildDynamicFormFromConfig(selectedType);
+  document.getElementById('step1-view').style.display    = 'none';
+  document.getElementById('step2-view').style.display    = '';
+  document.getElementById('step3-view').style.display    = 'none';
+  document.getElementById('complete-view').style.display = 'none';
+
+  // 差し戻し理由バナー
+  document.getElementById('rejection-banner')?.remove();
+  if (data.status === 'rejected' && data.rejection_reason) {
+    const banner = document.createElement('div');
+    banner.id = 'rejection-banner';
+    banner.style.cssText = 'background:var(--red-light);border:1.5px solid #f5b7b1;border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:var(--red-dark);line-height:1.6;';
+    banner.innerHTML = `<strong>差し戻し理由：</strong>${data.rejection_reason}`;
+    document.getElementById('dynamic-form')?.insertAdjacentElement('beforebegin', banner);
+  }
+
+  // ボタンラベル変更
+  const draftBtn = document.querySelector('[onclick="saveDraft()"]');
+  if (draftBtn) draftBtn.textContent = data.status === 'rejected' ? '修正して保存' : '変更を保存';
 }
 
 // submitApplicationの下書き更新対応（既存関数に追加処理）
@@ -2030,27 +2094,24 @@ const ROLE_LABEL = {
 const APPROVER_ROLES = ['team_leader', 'assistant_chief', 'section_chief', 'admin'];
 
 async function loadMailPage() {
-  selectedMailUsers = new Set();
+  // 受信ボックスへ転送
+  await loadInboxPage();
+}
 
-  // 承認者ロールのユーザーのみ取得
-  const { data: users } = await sb.from('users')
-    .select('*')
-    .eq('is_active', true)
-    .neq('id', currentUser.id)
-    .in('role', APPROVER_ROLES)
-    .order('role')
-    .order('department');
+async function loadInboxPage() {
+  await loadMailInbox();
+  checkUnreadMails();
+}
 
-  allApproverUsers = users || [];
-  renderApproverList(allApproverUsers);
-  updateSelectedBadges();
-
-  // 申請一覧をセレクトに反映
-  const appSel = document.getElementById('mail-application');
-  appSel.innerHTML = '<option value="">選択しない</option>' +
-    (allApplications || []).map(a => `<option value="${a.id}">${a.title}</option>`).join('');
-
-  loadMailHistory();
+async function checkUnreadMails() {
+  const { data } = await sb.from('notifications')
+    .select('id, message, is_read')
+    .eq('user_id', currentUser.id)
+    .eq('is_read', false);
+  const unread = (data || []).filter(n => {
+    try { return JSON.parse(n.message).type === 'mail'; } catch { return false; }
+  });
+  updateUnreadBadge(unread.length);
 }
 
 function renderApproverList(users) {
@@ -2157,6 +2218,16 @@ function removeMailUser(uid) {
   updateSelectedBadges();
 }
 
+// メールタブ切り替え
+function switchMailTab(tab, btn) {
+  document.querySelectorAll('#mail-tab-bar .tab').forEach(t => t.classList.remove('active'));
+  btn?.classList.add('active');
+  document.getElementById('mail-inbox-section').style.display = tab === 'inbox' ? '' : 'none';
+  document.getElementById('mail-sent-section').style.display  = tab === 'sent'  ? '' : 'none';
+  if (tab === 'inbox') loadMailInbox();
+  if (tab === 'sent')  loadMailHistory();
+}
+
 async function sendMail() {
   const subject = document.getElementById('mail-subject').value.trim();
   const body    = document.getElementById('mail-body').value.trim();
@@ -2166,46 +2237,163 @@ async function sendMail() {
   if (!subject) { showToast('件名を入力してください', 'error'); return; }
   if (!body)    { showToast('本文を入力してください', 'error'); return; }
 
-  // messagesテーブルに保存（実際のメール送信はEdge Functions等で対応）
-  const rows = [...selectedMailUsers].map(uid => ({
-    sender_id:      currentUser.id,
-    recipient_id:   uid,
-    subject:        subject,
-    body:           body,
-    application_id: appId,
-    is_read:        false,
+  const btn = document.getElementById('btn-send-mail');
+  btn.disabled = true;
+  btn.textContent = '送信中...';
+
+  // 受信者ごとにnotificationsレコードを作成
+  // subject・body・sender_idをmessageフィールドにJSONとして格納
+  const notifRows = [...selectedMailUsers].map(uid => ({
+    user_id:        uid,
+    application_id: appId || null,
+    message: JSON.stringify({
+      type:      'mail',
+      subject:   subject,
+      body:      body,
+      sender_id: currentUser.id,
+      sender_name: currentUserProfile?.name || '',
+      sent_at:   new Date().toISOString(),
+    }),
+    is_read: false,
   }));
 
-  const { error } = await sb.from('messages').insert(rows);
+  const { error } = await sb.from('notifications').insert(notifRows);
+
+  btn.disabled = false;
+  btn.textContent = '送信する';
+
   if (error) {
-    // messagesテーブルが未作成の場合はnotificationsに代替保存
-    const notifRows = [...selectedMailUsers].map(uid => ({
-      user_id:        uid,
-      application_id: appId,
-      message:        `【${subject}】${body.slice(0, 100)}`,
-      is_read:        false,
-    }));
-    await sb.from('notifications').insert(notifRows);
+    showToast('送信に失敗しました：' + error.message, 'error');
+    return;
   }
 
   // 送信後リセット
   document.getElementById('mail-subject').value = '';
   document.getElementById('mail-body').value = '';
-  document.querySelectorAll('#mail-user-list input[type=checkbox]').forEach(cb => { cb.checked = false; });
+  document.querySelectorAll('#mail-user-list input[type=checkbox]')
+    .forEach(cb => { cb.checked = false; });
   selectedMailUsers.clear();
-  showToast(`${rows.length}名に送信しました`, 'success');
-  loadMailHistory();
+  updateSelectedBadges();
+  showToast(`${notifRows.length}名に送信しました`, 'success');
 }
 
+// 受信ボックス（自分宛のメール型通知）
+async function loadMailInbox() {
+  const el = document.getElementById('mail-inbox-list');
+  if (!el) return;
+  el.innerHTML = '<div class="loading">読み込み中...</div>';
+
+  const { data, error } = await sb.from('notifications')
+    .select('*')
+    .eq('user_id', currentUser.id)
+    .order('created_at', { ascending: false })
+    .limit(50);
+
+  if (error) { el.innerHTML = '<div class="loading">読み込みエラー</div>'; return; }
+
+  // mailタイプのものだけ抽出
+  const mails = (data || []).filter(n => {
+    try { return JSON.parse(n.message).type === 'mail'; } catch { return false; }
+  });
+
+  if (!mails.length) {
+    el.innerHTML = '<div class="loading">受信したメッセージはありません</div>';
+    return;
+  }
+
+  el.innerHTML = mails.map(n => {
+    let parsed = {};
+    try { parsed = JSON.parse(n.message); } catch {}
+    return `
+      <div class="mail-history-item" style="${!n.is_read ? 'background:var(--red-light);border-radius:var(--radius);padding:8px;' : 'padding:4px 0;'}"
+        onclick="markMailRead('${n.id}', this)">
+        <div class="mh-subject" style="display:flex;align-items:center;gap:8px;">
+          ${!n.is_read ? '<span style="width:8px;height:8px;border-radius:50%;background:var(--red);flex-shrink:0;display:inline-block;"></span>' : ''}
+          ${parsed.subject || '(件名なし)'}
+        </div>
+        <div class="mh-meta" style="margin-top:4px">${parsed.sender_name || '送信者不明'} ・ ${formatDate(parsed.sent_at || n.created_at)}</div>
+        <div id="mail-body-${n.id}" style="display:none;margin-top:8px;font-size:13px;color:var(--gray-700);white-space:pre-wrap;border-top:1px solid var(--gray-300);padding-top:8px;">${parsed.body || ''}</div>
+      </div>`;
+  }).join('');
+
+  // 未読バッジ更新
+  updateUnreadBadge(mails.filter(n => !n.is_read).length);
+}
+
+async function markMailRead(id, el) {
+  // 本文トグル
+  const bodyEl = document.getElementById('mail-body-' + id);
+  if (bodyEl) bodyEl.style.display = bodyEl.style.display === 'none' ? '' : 'none';
+
+  // 未読なら既読に
+  const dot = el.querySelector('span[style*="border-radius:50%"]');
+  if (dot) {
+    await sb.from('notifications').update({ is_read: true }).eq('id', id);
+    dot.remove();
+    el.style.background = '';
+    el.style.borderRadius = '';
+    el.style.padding = '';
+    // 未読数を再集計
+    const unreadEls = document.querySelectorAll('#mail-inbox-list [style*="var(--red-light)"]');
+    updateUnreadBadge(unreadEls.length);
+  }
+}
+
+function updateUnreadBadge(count) {
+  // ページ内バッジ
+  const badge = document.getElementById('mail-unread-badge');
+  if (badge) {
+    badge.textContent = count > 0 ? `未読 ${count}件` : '';
+    badge.style.display = count > 0 ? '' : 'none';
+  }
+  // ナビバッジ
+  const navBadge = document.getElementById('nav-unread');
+  if (navBadge) {
+    navBadge.textContent = count > 0 ? count : '';
+    navBadge.style.display = count > 0 ? '' : 'none';
+  }
+}
+
+// 送信履歴（自分が送ったメール）
 async function loadMailHistory() {
-  const { data } = await sb.from('notifications')
-    .select('*').order('created_at', { ascending: false }).limit(20);
   const el = document.getElementById('mail-history');
-  if (!data?.length) { el.innerHTML = '<div class="loading">送信履歴はありません</div>'; return; }
-  el.innerHTML = data.map(m => `
+  if (!el) return;
+  el.innerHTML = '<div class="loading">読み込み中...</div>';
+
+  // notificationsからmailタイプ かつ sender_id が自分のものを取得
+  const { data, error } = await sb.from('notifications')
+    .select('*, users!user_id(name)')
+    .order('created_at', { ascending: false })
+    .limit(100);
+
+  if (error) { el.innerHTML = '<div class="loading">読み込みエラー</div>'; return; }
+
+  const sent = (data || []).filter(n => {
+    try {
+      const p = JSON.parse(n.message);
+      return p.type === 'mail' && p.sender_id === currentUser.id;
+    } catch { return false; }
+  });
+
+  if (!sent.length) {
+    el.innerHTML = '<div class="loading">送信履歴はありません</div>';
+    return;
+  }
+
+  // 件名・宛先でグループ化して表示
+  const grouped = {};
+  sent.forEach(n => {
+    let p = {};
+    try { p = JSON.parse(n.message); } catch {}
+    const key = `${p.subject}__${p.sent_at}`;
+    if (!grouped[key]) grouped[key] = { subject: p.subject, sent_at: p.sent_at, recipients: [] };
+    grouped[key].recipients.push(n.users?.name || '不明');
+  });
+
+  el.innerHTML = Object.values(grouped).map(g => `
     <div class="mail-history-item">
-      <div class="mh-subject">${m.message?.slice(0, 60) || '(内容なし)'}</div>
-      <div class="mh-meta">${formatDate(m.created_at)}</div>
+      <div class="mh-subject">${g.subject || '(件名なし)'}</div>
+      <div class="mh-meta">宛先：${g.recipients.join('、')} ・ ${formatDate(g.sent_at)}</div>
     </div>`).join('');
 }
 
