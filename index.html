@@ -546,6 +546,28 @@
   /* ===================== ローディング ===================== */
   .loading { text-align: center; padding: 40px; color: var(--gray-500); font-size: 14px; }
 
+  /* ===================== 通知バッジ ===================== */
+  .nav-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--red); color: #fff;
+    font-size: 10px; font-weight: 700;
+    min-width: 16px; height: 16px;
+    padding: 0 4px; border-radius: 20px;
+    vertical-align: middle; margin-left: 2px;
+    line-height: 1;
+  }
+  .notif-item {
+    padding: 12px 0; border-bottom: 1px solid var(--gray-100);
+    cursor: pointer; transition: background 0.1s;
+  }
+  .notif-item:last-child { border-bottom: none; }
+  .notif-item:hover { background: var(--gray-100); border-radius: var(--radius); padding: 12px 8px; margin: 0 -8px; }
+  .notif-item.unread { background: var(--red-light); border-radius: var(--radius); padding: 10px 12px; margin: 0 -4px 4px; }
+  .notif-item .notif-title { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .notif-item .notif-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); flex-shrink: 0; }
+  .notif-item .notif-body { font-size: 12px; color: var(--gray-700); margin-top: 4px; white-space: pre-line; display: none; }
+  .notif-item .notif-meta { font-size: 11px; color: var(--gray-500); margin-top: 4px; }
+
   /* ===================== 詳細モーダル ===================== */
   .detail-table { width:100%; border-collapse:collapse; font-size:13px; }
   .detail-table tr { border-bottom:1px solid var(--gray-100); }
@@ -756,10 +778,10 @@
   </header>
 
   <nav class="nav-tabs">
-    <div class="nav-tab active" onclick="showPage('list')">申請一覧</div>
+    <div class="nav-tab active" onclick="showPage('list')">申請一覧 <span id="badge-list" class="nav-badge" style="display:none"></span></div>
     <div class="nav-tab" onclick="showPage('new')">新規申請</div>
-    <div class="nav-tab" id="nav-approval" style="display:none" onclick="showPage('approval')">承認待ち</div>
-    <div class="nav-tab" id="nav-inbox" onclick="showPage('inbox')">受信ボックス <span id="nav-unread" style="display:none;background:var(--red);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:20px;"></span></div>
+    <div class="nav-tab" id="nav-approval" style="display:none" onclick="showPage('approval')">承認待ち <span id="badge-approval" class="nav-badge" style="display:none"></span></div>
+    <div class="nav-tab" id="nav-inbox" onclick="showPage('inbox')">通知 <span id="badge-inbox" class="nav-badge" style="display:none"></span></div>
     <div class="nav-tab" id="nav-admin" style="display:none" onclick="showPage('admin')">管理者</div>
   </nav>
 
@@ -774,7 +796,8 @@
       <div class="tab-bar">
         <div class="tab active" onclick="filterList('all', this)">すべて</div>
         <div class="tab" onclick="filterList('pending', this)">承認待ち</div>
-        <div class="tab" onclick="filterList('approved', this)">承認済み</div>
+        <div class="tab" onclick="filterList('approved', this)">承認済み <span id="badge-approved" class="nav-badge" style="display:none"></span></div>
+        <div class="tab" onclick="filterList('rejected', this)">差し戻し <span id="badge-rejected" class="nav-badge" style="display:none"></span></div>
         <div class="tab" onclick="filterList('draft', this)">下書き</div>
       </div>
       <div id="app-list"><div class="loading">読み込み中...</div></div>
@@ -901,31 +924,12 @@
 
     <!-- メール送信ページ -->
     <div id="page-inbox" class="page">
-      <div class="list-header" style="margin-bottom:8px">
-        <h2>メッセージ</h2>
-        <span id="mail-unread-badge" style="display:none;background:var(--red);color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;"></span>
+      <div class="list-header" style="margin-bottom:16px">
+        <h2>通知</h2>
+        <button class="btn btn-secondary" style="padding:6px 14px;font-size:12px" onclick="markAllRead()">すべて既読にする</button>
       </div>
-
-      <!-- タブ -->
-      <div class="tab-bar" id="mail-tab-bar" style="margin-bottom:16px">
-        <div class="tab active" onclick="switchMailTab('inbox', this)">受信ボックス</div>
-        <div class="tab" onclick="switchMailTab('sent', this)">送信履歴</div>
-      </div>
-
-      <!-- 受信ボックス -->
-      <div id="mail-inbox-section">
-        <div class="card">
-          <div class="card-title">受信ボックス</div>
-          <div id="mail-inbox-list"><div class="loading">読み込み中...</div></div>
-        </div>
-      </div>
-
-      <!-- 送信履歴 -->
-      <div id="mail-sent-section" style="display:none">
-        <div class="card">
-          <div class="card-title">送信履歴</div>
-          <div id="mail-history"><div class="loading">読み込み中...</div></div>
-        </div>
+      <div class="card">
+        <div id="notif-list"><div class="loading">読み込み中...</div></div>
       </div>
     </div>
 
@@ -1159,17 +1163,8 @@ async function initApp(user) {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app').style.display = 'block';
   loadApplicationList();
-  // ログイン後に未読メールをチェック
-  setTimeout(async () => {
-    const { data } = await sb.from('notifications')
-      .select('id, message, is_read')
-      .eq('user_id', currentUser.id)
-      .eq('is_read', false);
-    const unread = (data || []).filter(n => {
-      try { return JSON.parse(n.message).type === 'mail'; } catch { return false; }
-    });
-    updateUnreadBadge(unread.length);
-  }, 1000);
+  // ログイン後にバッジを更新
+  setTimeout(() => refreshBadges(), 800);
 }
 
 // =====================================================
@@ -1709,12 +1704,10 @@ async function submitApplication() {
       user_id:        firstApproverId,
       application_id: data.id,
       message: JSON.stringify({
-        type:        'mail',
-        subject:     `【承認依頼】${appTitle}`,
-        body:        `${currentUserProfile?.name || ''}さんから承認依頼が届きました。\n\n書類種別：${TYPE_LABELS[data.type] || data.type}\n件名：${appTitle}\n\n承認待ちタブから内容を確認してください。`,
-        sender_id:   currentUser.id,
-        sender_name: currentUserProfile?.name || '',
-        sent_at:     new Date().toISOString(),
+        type:    'approval_request',
+        title:   `【承認依頼】${appTitle}`,
+        body:    `${currentUserProfile?.name || ''}さんから承認依頼が届きました。`,
+        link:    'approval',
       }),
       is_read: false,
     });
@@ -1878,64 +1871,49 @@ async function executeApproval(id, action, reason) {
 
   await sb.from('applications').update(updatePayload).eq('id', id);
 
-  // 次ステップの承認者または申請者へ通知
+  // 通知送信
+  const { data: appData } = await sb.from('applications')
+    .select('title, applicant_id, type').eq('id', id).single();
+
   if (action === 'approved' && newStep > step && newStep <= totalSteps) {
-    // 次ステップの承認者へ通知
+    // 次ステップの承認者へ
     const { data: nextApproval } = await sb.from('approvals')
-      .select('approver_id, users!approver_id(name)')
-      .eq('application_id', id).eq('step', newStep).single();
+      .select('approver_id').eq('application_id', id).eq('step', newStep).single();
     if (nextApproval?.approver_id) {
-      const { data: appData } = await sb.from('applications').select('title, type').eq('id', id).single();
       await sb.from('notifications').insert({
-        user_id:        nextApproval.approver_id,
-        application_id: id,
+        user_id: nextApproval.approver_id, application_id: id,
         message: JSON.stringify({
-          type:        'mail',
-          subject:     `【承認依頼】${appData?.title || '申請'}`,
-          body:        `前ステップの承認が完了しました。\nあなたの承認が必要です。\n\n申請一覧の「承認待ち」タブから内容を確認してください。`,
-          sender_id:   currentUser.id,
-          sender_name: currentUserProfile?.name || '',
-          sent_at:     new Date().toISOString(),
-        }),
-        is_read: false,
+          type:  'approval_request',
+          title: `【承認依頼】${appData?.title || '申請'}`,
+          body:  `前ステップの承認が完了しました。あなたの承認が必要です。`,
+          link:  'approval',
+        }), is_read: false,
       });
     }
   } else if (action === 'approved' && newStatus === 'approved') {
-    // 最終承認完了 → 申請者へ通知
-    const { data: appData } = await sb.from('applications')
-      .select('title, applicant_id').eq('id', id).single();
+    // 承認完了 → 申請者へ
     if (appData?.applicant_id) {
       await sb.from('notifications').insert({
-        user_id:        appData.applicant_id,
-        application_id: id,
+        user_id: appData.applicant_id, application_id: id,
         message: JSON.stringify({
-          type:        'mail',
-          subject:     `【承認完了】${appData.title}`,
-          body:        `申請「${appData.title}」がすべてのステップで承認されました。`,
-          sender_id:   currentUser.id,
-          sender_name: currentUserProfile?.name || '',
-          sent_at:     new Date().toISOString(),
-        }),
-        is_read: false,
+          type:  'approved',
+          title: `【承認完了】${appData.title}`,
+          body:  `申請がすべてのステップで承認されました。`,
+          link:  'list',
+        }), is_read: false,
       });
     }
   } else if (action === 'rejected') {
-    // 差し戻し → 申請者へ通知
-    const { data: appData } = await sb.from('applications')
-      .select('title, applicant_id').eq('id', id).single();
+    // 差し戻し → 申請者へ
     if (appData?.applicant_id) {
       await sb.from('notifications').insert({
-        user_id:        appData.applicant_id,
-        application_id: id,
+        user_id: appData.applicant_id, application_id: id,
         message: JSON.stringify({
-          type:        'mail',
-          subject:     `【差し戻し】${appData.title}`,
-          body:        `申請「${appData.title}」が差し戻されました。\n\n差し戻し理由：${reason || '理由なし'}\n\n内容を修正して再提出してください。`,
-          sender_id:   currentUser.id,
-          sender_name: currentUserProfile?.name || '',
-          sent_at:     new Date().toISOString(),
-        }),
-        is_read: false,
+          type:  'rejected',
+          title: `【差し戻し】${appData.title}`,
+          body:  `差し戻し理由：${reason || '理由なし'}`,
+          link:  'list',
+        }), is_read: false,
       });
     }
   }
@@ -2096,24 +2074,126 @@ const ROLE_LABEL = {
 const APPROVER_ROLES = ['team_leader', 'assistant_chief', 'section_chief', 'admin'];
 
 async function loadMailPage() {
-  // 受信ボックスへ転送
-  await loadInboxPage();
+  await loadNotifPage();
 }
 
-async function loadInboxPage() {
-  await loadMailInbox();
-  checkUnreadMails();
+async function loadNotifPage() {
+  await loadNotifList();
+  await refreshBadges();
+}
+
+// 全通知を取得してバッジ・一覧を更新
+async function refreshBadges() {
+  if (!currentUser) return;
+  const { data } = await sb.from('notifications')
+    .select('id, message, is_read, application_id')
+    .eq('user_id', currentUser.id)
+    .eq('is_read', false);
+
+  if (!data) return;
+  const unread = data || [];
+
+  // タイプ別に分類
+  const approvalReq = unread.filter(n => { try { return JSON.parse(n.message).type === 'approval_request'; } catch { return false; } });
+  const approved    = unread.filter(n => { try { return JSON.parse(n.message).type === 'approved'; } catch { return false; } });
+  const rejected    = unread.filter(n => { try { return JSON.parse(n.message).type === 'rejected'; } catch { return false; } });
+  const total       = unread.length;
+
+  // ナビバッジ更新
+  setBadge('badge-approval', approvalReq.length); // 承認待ちタブ
+  setBadge('badge-inbox',    total);               // 通知タブ
+  setBadge('badge-list',     approved.length + rejected.length); // 申請一覧タブ
+
+  // 申請一覧内タブバッジ
+  setBadge('badge-approved', approved.length);
+  setBadge('badge-rejected', rejected.length);
+}
+
+function setBadge(id, count) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (count > 0) {
+    el.textContent = count;
+    el.style.display = 'inline-flex';
+  } else {
+    el.textContent = '';
+    el.style.display = 'none';
+  }
+}
+
+// 通知一覧を表示
+async function loadNotifList() {
+  const el = document.getElementById('notif-list');
+  if (!el) return;
+  el.innerHTML = '<div class="loading">読み込み中...</div>';
+
+  const { data, error } = await sb.from('notifications')
+    .select('*')
+    .eq('user_id', currentUser.id)
+    .order('created_at', { ascending: false })
+    .limit(50);
+
+  if (error) { el.innerHTML = '<div class="loading">読み込みエラー</div>'; return; }
+  if (!data?.length) { el.innerHTML = '<div class="loading">通知はありません</div>'; return; }
+
+  const TYPE_ICON = {
+    approval_request: '🔔',
+    approved:         '✅',
+    rejected:         '↩️',
+  };
+
+  el.innerHTML = data.map(n => {
+    let p = {};
+    try { p = JSON.parse(n.message); } catch {}
+    const icon = TYPE_ICON[p.type] || '📌';
+    const unread = !n.is_read;
+    return `<div class="notif-item ${unread ? 'unread' : ''}" id="notif-${n.id}"
+      onclick="handleNotifClick('${n.id}', '${p.link || ''}', '${n.application_id || ''}', this)">
+      <div class="notif-title">
+        ${unread ? '<span class="notif-dot"></span>' : ''}
+        ${icon} ${p.title || '通知'}
+      </div>
+      <div class="notif-body">${p.body || ''}</div>
+      <div class="notif-meta">${formatDate(n.created_at)}</div>
+    </div>`;
+  }).join('');
+}
+
+async function handleNotifClick(id, link, appId, el) {
+  // 本文トグル
+  const body = el.querySelector('.notif-body');
+  if (body) body.style.display = body.style.display === 'none' ? '' : 'none';
+
+  // 未読なら既読に
+  if (el.classList.contains('unread')) {
+    el.classList.remove('unread');
+    el.querySelector('.notif-dot')?.remove();
+    await sb.from('notifications').update({ is_read: true }).eq('id', id);
+    await refreshBadges();
+  }
+
+  // リンク先へジャンプ
+  if (link === 'approval') showPage('approval');
+  else if (link === 'list' && appId) {
+    showPage('list');
+    // 該当申請をハイライト（少し待って一覧が描画されてから）
+    setTimeout(() => {
+      const item = document.querySelector(`[onclick*="${appId}"]`);
+      if (item) item.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 500);
+  }
+}
+
+async function markAllRead() {
+  await sb.from('notifications').update({ is_read: true })
+    .eq('user_id', currentUser.id).eq('is_read', false);
+  await loadNotifList();
+  await refreshBadges();
+  showToast('すべて既読にしました', 'success');
 }
 
 async function checkUnreadMails() {
-  const { data } = await sb.from('notifications')
-    .select('id, message, is_read')
-    .eq('user_id', currentUser.id)
-    .eq('is_read', false);
-  const unread = (data || []).filter(n => {
-    try { return JSON.parse(n.message).type === 'mail'; } catch { return false; }
-  });
-  updateUnreadBadge(unread.length);
+  await refreshBadges();
 }
 
 function renderApproverList(users) {
@@ -2220,14 +2300,10 @@ function removeMailUser(uid) {
   updateSelectedBadges();
 }
 
-// メールタブ切り替え
+// メールタブ切り替え（通知ページ内）
 function switchMailTab(tab, btn) {
-  document.querySelectorAll('#mail-tab-bar .tab').forEach(t => t.classList.remove('active'));
-  btn?.classList.add('active');
-  document.getElementById('mail-inbox-section').style.display = tab === 'inbox' ? '' : 'none';
-  document.getElementById('mail-sent-section').style.display  = tab === 'sent'  ? '' : 'none';
-  if (tab === 'inbox') loadMailInbox();
-  if (tab === 'sent')  loadMailHistory();
+  // 統合済み: 通知一覧のみ
+  loadNotifList();
 }
 
 async function sendMail() {
@@ -2279,8 +2355,11 @@ async function sendMail() {
   showToast(`${notifRows.length}名に送信しました`, 'success');
 }
 
-// 受信ボックス（自分宛のメール型通知）
+// 旧受信ボックス（loadNotifListに統合済み）
 async function loadMailInbox() {
+  await loadNotifList();
+}
+async function _loadMailInboxLegacy() {
   const el = document.getElementById('mail-inbox-list');
   if (!el) return;
   el.innerHTML = '<div class="loading">読み込み中...</div>';
@@ -2342,18 +2421,8 @@ async function markMailRead(id, el) {
 }
 
 function updateUnreadBadge(count) {
-  // ページ内バッジ
-  const badge = document.getElementById('mail-unread-badge');
-  if (badge) {
-    badge.textContent = count > 0 ? `未読 ${count}件` : '';
-    badge.style.display = count > 0 ? '' : 'none';
-  }
-  // ナビバッジ
-  const navBadge = document.getElementById('nav-unread');
-  if (navBadge) {
-    navBadge.textContent = count > 0 ? count : '';
-    navBadge.style.display = count > 0 ? '' : 'none';
-  }
+  // refreshBadgesに統合済み・互換性のため残す
+  setBadge('badge-inbox', count);
 }
 
 // 送信履歴（自分が送ったメール）
