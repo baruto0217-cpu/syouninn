@@ -1,0 +1,1200 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>電子決裁 申請フォーム</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  /* ===================== リセット・変数 ===================== */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --red:      #C0392B;
+    --red-dark: #922B21;
+    --red-light:#FADBD8;
+    --gray-900: #1a1a1a;
+    --gray-700: #3d3d3d;
+    --gray-500: #7a7a7a;
+    --gray-300: #d0d0d0;
+    --gray-100: #f5f5f5;
+    --white:    #ffffff;
+    --radius:   6px;
+    --shadow:   0 2px 8px rgba(0,0,0,0.10);
+    --font:     'Noto Sans JP', 'Hiragino Kaku Gothic ProN', sans-serif;
+  }
+
+  body {
+    font-family: var(--font);
+    background: var(--gray-100);
+    color: var(--gray-900);
+    min-height: 100vh;
+    padding: 0;
+  }
+
+  /* ===================== ヘッダー ===================== */
+  header {
+    background: var(--red);
+    color: var(--white);
+    padding: 0 32px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.18);
+  }
+  header .logo {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  header .logo svg { width: 22px; height: 22px; opacity: 0.9; }
+  .header-right { display: flex; align-items: center; gap: 16px; }
+  .user-badge {
+    font-size: 13px;
+    opacity: 0.85;
+  }
+  .btn-logout {
+    background: rgba(255,255,255,0.18);
+    border: 1px solid rgba(255,255,255,0.35);
+    color: var(--white);
+    padding: 5px 14px;
+    border-radius: var(--radius);
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .btn-logout:hover { background: rgba(255,255,255,0.28); }
+
+  /* ===================== ログイン画面 ===================== */
+  #login-screen {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    background: var(--gray-100);
+  }
+  .login-card {
+    background: var(--white);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+    padding: 48px 40px 40px;
+    width: 360px;
+    text-align: center;
+  }
+  .login-card .emblem {
+    width: 56px; height: 56px;
+    background: var(--red);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 20px;
+  }
+  .login-card .emblem svg { width: 28px; height: 28px; color: white; }
+  .login-card h1 { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+  .login-card p  { font-size: 13px; color: var(--gray-500); margin-bottom: 28px; }
+
+  /* ===================== メインレイアウト ===================== */
+  #app { display: none; }
+  .container {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 32px 16px 64px;
+  }
+
+  /* ===================== ステップインジケーター ===================== */
+  .steps {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin-bottom: 28px;
+  }
+  .step-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+    position: relative;
+  }
+  .step-item:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    top: 16px;
+    left: 50%;
+    width: 100%;
+    height: 2px;
+    background: var(--gray-300);
+    z-index: 0;
+  }
+  .step-item.done:not(:last-child)::after  { background: var(--red); }
+  .step-circle {
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    border: 2px solid var(--gray-300);
+    background: var(--white);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700;
+    color: var(--gray-500);
+    position: relative; z-index: 1;
+    transition: all 0.2s;
+  }
+  .step-item.active .step-circle {
+    border-color: var(--red);
+    background: var(--red);
+    color: var(--white);
+  }
+  .step-item.done .step-circle {
+    border-color: var(--red);
+    background: var(--red);
+    color: var(--white);
+  }
+  .step-label {
+    font-size: 11px;
+    color: var(--gray-500);
+    margin-top: 6px;
+    white-space: nowrap;
+  }
+  .step-item.active .step-label { color: var(--red); font-weight: 600; }
+
+  /* ===================== カード ===================== */
+  .card {
+    background: var(--white);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+    padding: 28px 28px 24px;
+    margin-bottom: 16px;
+  }
+  .card-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--gray-700);
+    margin-bottom: 18px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid var(--gray-100);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card-title span.tag {
+    font-size: 11px;
+    font-weight: 600;
+    background: var(--red-light);
+    color: var(--red-dark);
+    padding: 2px 8px;
+    border-radius: 20px;
+  }
+
+  /* ===================== フォーム部品 ===================== */
+  .form-row {
+    margin-bottom: 18px;
+  }
+  .form-row label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--gray-700);
+    margin-bottom: 6px;
+  }
+  .form-row label .required {
+    color: var(--red);
+    margin-left: 3px;
+  }
+  .form-row input[type="text"],
+  .form-row input[type="number"],
+  .form-row input[type="date"],
+  .form-row select,
+  .form-row textarea {
+    width: 100%;
+    padding: 9px 12px;
+    border: 1.5px solid var(--gray-300);
+    border-radius: var(--radius);
+    font-size: 14px;
+    font-family: var(--font);
+    color: var(--gray-900);
+    background: var(--white);
+    transition: border-color 0.15s, box-shadow 0.15s;
+    appearance: none;
+  }
+  .form-row input:focus,
+  .form-row select:focus,
+  .form-row textarea:focus {
+    outline: none;
+    border-color: var(--red);
+    box-shadow: 0 0 0 3px rgba(192,57,43,0.10);
+  }
+  .form-row textarea { resize: vertical; min-height: 90px; line-height: 1.6; }
+  .form-row select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%237a7a7a' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 32px;
+  }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 540px) { .form-grid { grid-template-columns: 1fr; } }
+
+  /* 金額フィールド */
+  .amount-wrap { position: relative; }
+  .amount-wrap input { padding-left: 28px; }
+  .amount-wrap::before {
+    content: '¥';
+    position: absolute;
+    left: 10px; top: 50%;
+    transform: translateY(-50%);
+    font-size: 14px;
+    color: var(--gray-500);
+  }
+
+  /* 書類種別ボタン選択 */
+  .type-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+  @media (max-width: 480px) { .type-grid { grid-template-columns: 1fr; } }
+  .type-btn {
+    border: 2px solid var(--gray-300);
+    border-radius: var(--radius);
+    padding: 14px 12px;
+    text-align: left;
+    cursor: pointer;
+    background: var(--white);
+    transition: all 0.15s;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .type-btn:hover { border-color: var(--red); }
+  .type-btn.selected {
+    border-color: var(--red);
+    background: var(--red-light);
+  }
+  .type-btn .type-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--gray-900);
+  }
+  .type-btn.selected .type-name { color: var(--red-dark); }
+  .type-btn .type-desc {
+    font-size: 11px;
+    color: var(--gray-500);
+  }
+  .type-btn .type-route {
+    font-size: 11px;
+    color: var(--red);
+    font-weight: 600;
+    margin-top: 4px;
+  }
+
+  /* 承認経路バッジ */
+  .route-info {
+    background: var(--gray-100);
+    border-left: 3px solid var(--red);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    padding: 10px 14px;
+    font-size: 12px;
+    color: var(--gray-700);
+    margin-top: 8px;
+    display: none;
+  }
+  .route-info.visible { display: block; }
+  .route-info strong { color: var(--red-dark); }
+
+  /* ===================== ボタン ===================== */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 24px;
+    border-radius: var(--radius);
+    font-size: 14px;
+    font-weight: 600;
+    font-family: var(--font);
+    cursor: pointer;
+    border: none;
+    transition: all 0.15s;
+  }
+  .btn-primary {
+    background: var(--red);
+    color: var(--white);
+  }
+  .btn-primary:hover { background: var(--red-dark); }
+  .btn-primary:disabled { background: var(--gray-300); cursor: not-allowed; }
+  .btn-secondary {
+    background: var(--white);
+    color: var(--gray-700);
+    border: 1.5px solid var(--gray-300);
+  }
+  .btn-secondary:hover { border-color: var(--gray-500); }
+  .btn-ghost {
+    background: transparent;
+    color: var(--red);
+    border: 1.5px solid var(--red);
+  }
+  .btn-ghost:hover { background: var(--red-light); }
+
+  .btn-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 24px;
+    gap: 12px;
+  }
+  .btn-row-right { display: flex; gap: 10px; }
+
+  /* ===================== トースト通知 ===================== */
+  #toast {
+    position: fixed;
+    bottom: 24px; left: 50%;
+    transform: translateX(-50%) translateY(80px);
+    background: var(--gray-900);
+    color: var(--white);
+    padding: 12px 24px;
+    border-radius: 24px;
+    font-size: 14px;
+    font-weight: 500;
+    z-index: 9999;
+    opacity: 0;
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    white-space: nowrap;
+  }
+  #toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  #toast.success { background: #1e7e34; }
+  #toast.error   { background: var(--red); }
+
+  /* ===================== 確認画面 ===================== */
+  .confirm-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .confirm-table tr { border-bottom: 1px solid var(--gray-100); }
+  .confirm-table tr:last-child { border-bottom: none; }
+  .confirm-table th {
+    width: 130px;
+    padding: 10px 0;
+    text-align: left;
+    color: var(--gray-500);
+    font-weight: 600;
+    vertical-align: top;
+  }
+  .confirm-table td {
+    padding: 10px 0;
+    color: var(--gray-900);
+    line-height: 1.6;
+  }
+  .confirm-table .route-badges {
+    display: flex; gap: 6px; flex-wrap: wrap;
+  }
+  .route-badge {
+    background: var(--red-light);
+    color: var(--red-dark);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 20px;
+  }
+
+  /* ===================== 完了画面 ===================== */
+  #complete-view {
+    text-align: center;
+    padding: 48px 24px;
+  }
+  .complete-icon {
+    width: 64px; height: 64px;
+    border-radius: 50%;
+    background: #d4edda;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 20px;
+  }
+  .complete-icon svg { width: 32px; height: 32px; color: #1e7e34; }
+  #complete-view h2 { font-size: 20px; margin-bottom: 8px; }
+  #complete-view p  { font-size: 14px; color: var(--gray-500); margin-bottom: 28px; }
+  .app-number {
+    font-size: 13px;
+    background: var(--gray-100);
+    padding: 10px 20px;
+    border-radius: var(--radius);
+    display: inline-block;
+    margin-bottom: 24px;
+    color: var(--gray-700);
+  }
+  .app-number strong { color: var(--red-dark); font-family: monospace; }
+
+  /* ===================== 申請一覧 ===================== */
+  .list-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+  .list-header h2 { font-size: 16px; font-weight: 700; }
+  .tab-bar {
+    display: flex;
+    gap: 0;
+    border-bottom: 2px solid var(--gray-300);
+    margin-bottom: 16px;
+  }
+  .tab {
+    padding: 8px 18px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--gray-500);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: all 0.15s;
+  }
+  .tab.active { color: var(--red); border-bottom-color: var(--red); }
+  .app-item {
+    background: var(--white);
+    border-radius: var(--radius);
+    border: 1.5px solid var(--gray-300);
+    padding: 14px 16px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .app-item:hover { border-color: var(--red); box-shadow: var(--shadow); }
+  .app-item .status-dot {
+    width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+  }
+  .status-dot.pending  { background: #f39c12; }
+  .status-dot.approved { background: #27ae60; }
+  .status-dot.rejected { background: var(--red); }
+  .status-dot.draft    { background: var(--gray-300); }
+  .app-item .info { flex: 1; min-width: 0; }
+  .app-item .info .title { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .app-item .info .meta  { font-size: 12px; color: var(--gray-500); margin-top: 2px; }
+  .app-item .status-label { font-size: 12px; font-weight: 600; flex-shrink: 0; }
+  .status-label.pending  { color: #f39c12; }
+  .status-label.approved { color: #27ae60; }
+  .status-label.rejected { color: var(--red); }
+  .status-label.draft    { color: var(--gray-500); }
+
+  /* ===================== ナビゲーション ===================== */
+  .nav-tabs {
+    display: flex;
+    background: var(--white);
+    border-bottom: 1.5px solid var(--gray-300);
+    padding: 0 32px;
+    gap: 0;
+  }
+  .nav-tab {
+    padding: 14px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--gray-500);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1.5px;
+    transition: all 0.15s;
+  }
+  .nav-tab.active { color: var(--red); border-bottom-color: var(--red); }
+
+  .page { display: none; }
+  .page.active { display: block; }
+
+  /* ===================== ローディング ===================== */
+  .loading { text-align: center; padding: 40px; color: var(--gray-500); font-size: 14px; }
+</style>
+</head>
+<body>
+
+<!-- ログイン画面 -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="emblem">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+      </svg>
+    </div>
+    <h1>電子決裁システム</h1>
+    <p>救急救命士 検証事業</p>
+    <div class="form-row">
+      <label>メールアドレス</label>
+      <input type="text" id="login-email" placeholder="example@city.lg.jp" autocomplete="email">
+    </div>
+    <div class="form-row">
+      <label>パスワード</label>
+      <input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="login()">ログイン</button>
+  </div>
+</div>
+
+<!-- メインアプリ -->
+<div id="app">
+  <header>
+    <div class="logo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+      </svg>
+      電子決裁システム
+    </div>
+    <div class="header-right">
+      <span class="user-badge" id="user-name-badge"></span>
+      <button class="btn-logout" onclick="logout()">ログアウト</button>
+    </div>
+  </header>
+
+  <nav class="nav-tabs">
+    <div class="nav-tab active" onclick="showPage('list')">申請一覧</div>
+    <div class="nav-tab" onclick="showPage('new')">新規申請</div>
+    <div class="nav-tab" id="nav-approval" style="display:none" onclick="showPage('approval')">承認待ち</div>
+  </nav>
+
+  <div class="container">
+
+    <!-- 申請一覧ページ -->
+    <div id="page-list" class="page active">
+      <div class="list-header">
+        <h2>申請一覧</h2>
+        <button class="btn btn-primary" onclick="showPage('new')" style="padding:8px 16px;font-size:13px">＋ 新規申請</button>
+      </div>
+      <div class="tab-bar">
+        <div class="tab active" onclick="filterList('all', this)">すべて</div>
+        <div class="tab" onclick="filterList('pending', this)">承認待ち</div>
+        <div class="tab" onclick="filterList('approved', this)">承認済み</div>
+        <div class="tab" onclick="filterList('draft', this)">下書き</div>
+      </div>
+      <div id="app-list"><div class="loading">読み込み中...</div></div>
+    </div>
+
+    <!-- 新規申請ページ -->
+    <div id="page-new" class="page">
+
+      <!-- ステップ1: 書類種別 -->
+      <div id="step1-view">
+        <div class="steps">
+          <div class="step-item active"><div class="step-circle">1</div><div class="step-label">書類種別</div></div>
+          <div class="step-item"><div class="step-circle">2</div><div class="step-label">内容入力</div></div>
+          <div class="step-item"><div class="step-circle">3</div><div class="step-label">確認・提出</div></div>
+        </div>
+        <div class="card">
+          <div class="card-title">書類の種別を選択してください</div>
+          <div class="type-grid">
+            <button class="type-btn" onclick="selectType('report', this)">
+              <span class="type-name">報告書・業務日誌</span>
+              <span class="type-desc">検証事業の活動記録・報告</span>
+              <span class="type-route">▶ 係長確認（1段階）</span>
+            </button>
+            <button class="type-btn" onclick="selectType('leave', this)">
+              <span class="type-name">出張・休暇申請</span>
+              <span class="type-desc">出張命令・各種休暇</span>
+              <span class="type-route">▶ 係長 → 課長（2段階）</span>
+            </button>
+            <button class="type-btn" onclick="selectType('purchase', this)">
+              <span class="type-name">物品購入・経費申請</span>
+              <span class="type-desc">備品・消耗品・経費精算</span>
+              <span class="type-route">▶ 5万円以上で課長承認追加</span>
+            </button>
+            <button class="type-btn" onclick="selectType('verification', this)">
+              <span class="type-name">検証事業関連報告</span>
+              <span class="type-desc">検証結果・症例報告</span>
+              <span class="type-route">▶ 係長 → 課長（2段階）</span>
+            </button>
+          </div>
+          <div id="route-info" class="route-info"></div>
+        </div>
+        <div class="btn-row">
+          <div></div>
+          <button class="btn btn-primary" id="btn-next1" onclick="goStep(2)" disabled>次へ →</button>
+        </div>
+      </div>
+
+      <!-- ステップ2: 内容入力 -->
+      <div id="step2-view" style="display:none">
+        <div class="steps">
+          <div class="step-item done"><div class="step-circle">✓</div><div class="step-label">書類種別</div></div>
+          <div class="step-item active"><div class="step-circle">2</div><div class="step-label">内容入力</div></div>
+          <div class="step-item"><div class="step-circle">3</div><div class="step-label">確認・提出</div></div>
+        </div>
+        <div class="card">
+          <div class="card-title">
+            <span id="form-type-label">申請内容</span>
+            <span class="tag" id="form-type-tag"></span>
+          </div>
+          <div id="dynamic-form"></div>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-secondary" onclick="goStep(1)">← 戻る</button>
+          <div class="btn-row-right">
+            <button class="btn btn-ghost" onclick="saveDraft()">下書き保存</button>
+            <button class="btn btn-primary" onclick="goStep(3)">確認画面へ →</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ステップ3: 確認・提出 -->
+      <div id="step3-view" style="display:none">
+        <div class="steps">
+          <div class="step-item done"><div class="step-circle">✓</div><div class="step-label">書類種別</div></div>
+          <div class="step-item done"><div class="step-circle">✓</div><div class="step-label">内容入力</div></div>
+          <div class="step-item active"><div class="step-circle">3</div><div class="step-label">確認・提出</div></div>
+        </div>
+        <div class="card">
+          <div class="card-title">申請内容の確認</div>
+          <table class="confirm-table" id="confirm-table"></table>
+        </div>
+        <div class="card" style="background:var(--red-light); border:1.5px solid #f5b7b1;">
+          <div style="font-size:13px; color:var(--red-dark); line-height:1.7;">
+            ⚠ 提出後は内容の変更ができません。承認者へ通知メールが送信されます。内容をよく確認してから提出してください。
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-secondary" onclick="goStep(2)">← 戻る</button>
+          <button class="btn btn-primary" id="btn-submit" onclick="submitApplication()">提出する</button>
+        </div>
+      </div>
+
+      <!-- 完了画面 -->
+      <div id="complete-view" style="display:none">
+        <div class="card">
+          <div id="complete-view">
+            <div class="complete-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+            </div>
+            <h2>申請を提出しました</h2>
+            <p>承認者へ通知が送信されました。承認状況は申請一覧で確認できます。</p>
+            <div class="app-number">申請番号：<strong id="app-number-display">---</strong></div>
+            <div>
+              <button class="btn btn-primary" onclick="showPage('list')">申請一覧へ戻る</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- 承認ページ（係長・課長向け） -->
+    <div id="page-approval" class="page">
+      <div class="list-header">
+        <h2>承認待ち一覧</h2>
+      </div>
+      <div id="approval-list"><div class="loading">読み込み中...</div></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- トースト -->
+<div id="toast"></div>
+
+<script>
+// =====================================================
+// Supabase 設定（ここを書き換えてください）
+// =====================================================
+const SUPABASE_URL = 'https://xxxxxxxxxxxxxxxx.supabase.co'; // ← あなたのURL
+const SUPABASE_ANON_KEY = 'eyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'; // ← あなたのanon key
+
+const { createClient } = supabase;
+const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// =====================================================
+// 状態管理
+// =====================================================
+let currentUser = null;
+let currentUserProfile = null;
+let selectedType = null;
+let formData = {};
+let allApplications = [];
+
+// =====================================================
+// 初期化
+// =====================================================
+window.addEventListener('DOMContentLoaded', async () => {
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) {
+    await initApp(session.user);
+  }
+});
+
+async function initApp(user) {
+  currentUser = user;
+  const { data: profile } = await sb.from('users').select('*').eq('id', user.id).single();
+  currentUserProfile = profile;
+  document.getElementById('user-name-badge').textContent =
+    profile ? `${profile.name}（${profile.department}）` : user.email;
+
+  // 承認者タブの表示
+  if (profile && ['team_leader','section_chief','admin'].includes(profile.role)) {
+    document.getElementById('nav-approval').style.display = 'block';
+  }
+
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  loadApplicationList();
+}
+
+// =====================================================
+// 認証
+// =====================================================
+async function login() {
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  if (!email || !password) { showToast('メールアドレスとパスワードを入力してください', 'error'); return; }
+
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  if (error) { showToast('ログインに失敗しました：' + error.message, 'error'); return; }
+  await initApp(data.user);
+}
+
+async function logout() {
+  await sb.auth.signOut();
+  location.reload();
+}
+
+// =====================================================
+// ナビゲーション
+// =====================================================
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  const tabs = { list: 0, new: 1, approval: 2 };
+  document.querySelectorAll('.nav-tab')[tabs[name]]?.classList.add('active');
+
+  if (name === 'list') loadApplicationList();
+  if (name === 'new') resetForm();
+  if (name === 'approval') loadApprovalList();
+}
+
+// =====================================================
+// 書類種別選択
+// =====================================================
+const TYPE_LABELS = {
+  report:       '報告書・業務日誌',
+  leave:        '出張・休暇申請',
+  purchase:     '物品購入・経費申請',
+  verification: '検証事業関連報告',
+  other:        'その他',
+};
+const ROUTE_DESCRIPTIONS = {
+  report:       '承認経路：<strong>係長確認</strong>（1段階）',
+  leave:        '承認経路：<strong>係長承認</strong> → <strong>課長承認</strong>（2段階）',
+  purchase:     '承認経路：<strong>係長承認</strong>（5万円以上は課長承認も追加）',
+  verification: '承認経路：<strong>係長確認</strong> → <strong>課長承認</strong>（2段階）',
+  other:        '承認経路：<strong>係長承認</strong>（1段階）',
+};
+
+function selectType(type, btn) {
+  selectedType = type;
+  document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+  const info = document.getElementById('route-info');
+  info.innerHTML = ROUTE_DESCRIPTIONS[type];
+  info.classList.add('visible');
+  document.getElementById('btn-next1').disabled = false;
+}
+
+// =====================================================
+// ステップ制御
+// =====================================================
+function goStep(n) {
+  if (n === 2) {
+    if (!selectedType) { showToast('書類種別を選択してください', 'error'); return; }
+    buildDynamicForm(selectedType);
+  }
+  if (n === 3) {
+    if (!validateForm()) return;
+    buildConfirmTable();
+  }
+  document.getElementById('step1-view').style.display = n === 1 ? '' : 'none';
+  document.getElementById('step2-view').style.display = n === 2 ? '' : 'none';
+  document.getElementById('step3-view').style.display = n === 3 ? '' : 'none';
+  document.getElementById('complete-view').style.display = 'none';
+}
+
+// =====================================================
+// 動的フォーム生成
+// =====================================================
+function buildDynamicForm(type) {
+  document.getElementById('form-type-label').textContent = TYPE_LABELS[type] + ' の入力';
+  document.getElementById('form-type-tag').textContent = TYPE_LABELS[type];
+
+  const forms = {
+    report: `
+      <div class="form-row">
+        <label>件名<span class="required">*</span></label>
+        <input type="text" id="f-title" placeholder="例：令和6年度 第1回検証事業 活動報告" value="${formData.title||''}">
+      </div>
+      <div class="form-grid">
+        <div class="form-row">
+          <label>報告日<span class="required">*</span></label>
+          <input type="date" id="f-date" value="${formData.date||today()}">
+        </div>
+        <div class="form-row">
+          <label>活動場所</label>
+          <input type="text" id="f-location" placeholder="例：○○病院" value="${formData.location||''}">
+        </div>
+      </div>
+      <div class="form-row">
+        <label>活動内容<span class="required">*</span></label>
+        <textarea id="f-content" placeholder="活動の概要・経過を記入">${formData.content||''}</textarea>
+      </div>
+      <div class="form-row">
+        <label>特記事項・所見</label>
+        <textarea id="f-notes" placeholder="気になった点・次回への申し送りなど" style="min-height:70px">${formData.notes||''}</textarea>
+      </div>`,
+
+    leave: `
+      <div class="form-row">
+        <label>件名<span class="required">*</span></label>
+        <input type="text" id="f-title" placeholder="例：年次有給休暇 取得申請" value="${formData.title||''}">
+      </div>
+      <div class="form-row">
+        <label>申請種別<span class="required">*</span></label>
+        <select id="f-leave-type">
+          <option value="">選択してください</option>
+          <option value="年次有給" ${formData.leave_type==='年次有給'?'selected':''}>年次有給休暇</option>
+          <option value="特別休暇" ${formData.leave_type==='特別休暇'?'selected':''}>特別休暇</option>
+          <option value="出張"     ${formData.leave_type==='出張'    ?'selected':''}>出張</option>
+          <option value="代休"     ${formData.leave_type==='代休'    ?'selected':''}>代休</option>
+          <option value="その他"   ${formData.leave_type==='その他'  ?'selected':''}>その他</option>
+        </select>
+      </div>
+      <div class="form-grid">
+        <div class="form-row">
+          <label>開始日<span class="required">*</span></label>
+          <input type="date" id="f-start" value="${formData.start||today()}">
+        </div>
+        <div class="form-row">
+          <label>終了日<span class="required">*</span></label>
+          <input type="date" id="f-end" value="${formData.end||today()}">
+        </div>
+      </div>
+      <div class="form-row">
+        <label>理由・目的</label>
+        <textarea id="f-reason" placeholder="出張の場合は目的地・用件を記入">${formData.reason||''}</textarea>
+      </div>`,
+
+    purchase: `
+      <div class="form-row">
+        <label>件名<span class="required">*</span></label>
+        <input type="text" id="f-title" placeholder="例：検証事業用 消耗品購入申請" value="${formData.title||''}">
+      </div>
+      <div class="form-grid">
+        <div class="form-row">
+          <label>申請金額（円）<span class="required">*</span></label>
+          <div class="amount-wrap">
+            <input type="number" id="f-amount" placeholder="0" min="0" value="${formData.amount||''}" oninput="updatePurchaseRoute()">
+          </div>
+        </div>
+        <div class="form-row">
+          <label>購入希望日</label>
+          <input type="date" id="f-purchase-date" value="${formData.purchase_date||today()}">
+        </div>
+      </div>
+      <div id="purchase-route-note" class="route-info visible" style="margin-bottom:14px">
+        金額を入力すると承認経路が表示されます
+      </div>
+      <div class="form-row">
+        <label>購入品目・数量<span class="required">*</span></label>
+        <textarea id="f-items" placeholder="品名・数量・単価を記入&#10;例）酸素マスク 10枚 × ¥500 = ¥5,000">${formData.items||''}</textarea>
+      </div>
+      <div class="form-row">
+        <label>購入理由・用途</label>
+        <textarea id="f-reason" placeholder="なぜ購入が必要か・どこで使用するか" style="min-height:70px">${formData.reason||''}</textarea>
+      </div>`,
+
+    verification: `
+      <div class="form-row">
+        <label>件名<span class="required">*</span></label>
+        <input type="text" id="f-title" placeholder="例：令和6年度 検証症例報告 第5号" value="${formData.title||''}">
+      </div>
+      <div class="form-grid">
+        <div class="form-row">
+          <label>報告日<span class="required">*</span></label>
+          <input type="date" id="f-date" value="${formData.date||today()}">
+        </div>
+        <div class="form-row">
+          <label>症例番号</label>
+          <input type="text" id="f-case-no" placeholder="例：R6-005" value="${formData.case_no||''}">
+        </div>
+      </div>
+      <div class="form-row">
+        <label>検証内容・経緯<span class="required">*</span></label>
+        <textarea id="f-content" placeholder="検証の背景・実施内容を記入">${formData.content||''}</textarea>
+      </div>
+      <div class="form-row">
+        <label>結果・考察</label>
+        <textarea id="f-result" placeholder="検証結果・今後の課題・改善点">${formData.result||''}</textarea>
+      </div>`,
+  };
+
+  document.getElementById('dynamic-form').innerHTML =
+    forms[type] || `<div class="form-row"><label>件名<span class="required">*</span></label><input type="text" id="f-title" value="${formData.title||''}"></div><div class="form-row"><label>内容<span class="required">*</span></label><textarea id="f-content">${formData.content||''}</textarea></div>`;
+}
+
+function updatePurchaseRoute() {
+  const amount = parseInt(document.getElementById('f-amount')?.value) || 0;
+  const note = document.getElementById('purchase-route-note');
+  if (!note) return;
+  if (amount >= 50000) {
+    note.innerHTML = '⚠ 5万円以上のため <strong>係長承認 → 課長承認</strong>（2段階）が必要です';
+    note.style.borderLeftColor = 'var(--red)';
+  } else if (amount > 0) {
+    note.innerHTML = '承認経路：<strong>係長承認</strong>（1段階）';
+    note.style.borderLeftColor = 'var(--gray-300)';
+  } else {
+    note.innerHTML = '金額を入力すると承認経路が表示されます';
+  }
+}
+
+// =====================================================
+// バリデーション
+// =====================================================
+function validateForm() {
+  const title = document.getElementById('f-title')?.value.trim();
+  if (!title) { showToast('件名を入力してください', 'error'); return false; }
+  collectFormData();
+  return true;
+}
+
+function collectFormData() {
+  formData = { title: document.getElementById('f-title')?.value.trim() };
+  ['date','location','content','notes','leave_type','start','end','reason',
+   'amount','items','purchase_date','case_no','result'].forEach(k => {
+    const el = document.getElementById('f-' + k.replace('_','-'));
+    if (el) formData[k] = el.value;
+  });
+}
+
+// =====================================================
+// 確認テーブル生成
+// =====================================================
+function buildConfirmTable() {
+  collectFormData();
+  const amount = parseInt(formData.amount) || 0;
+  const steps = getApprovalSteps(selectedType, amount);
+
+  const rows = [
+    ['書類種別', TYPE_LABELS[selectedType]],
+    ['件名', formData.title],
+    formData.date        ? ['報告日', formData.date]       : null,
+    formData.start       ? ['開始日', formData.start]      : null,
+    formData.end         ? ['終了日', formData.end]        : null,
+    formData.leave_type  ? ['申請種別', formData.leave_type] : null,
+    formData.amount      ? ['申請金額', `¥${Number(formData.amount).toLocaleString()}`] : null,
+    formData.case_no     ? ['症例番号', formData.case_no]  : null,
+    formData.content     ? ['内容', formData.content]      : null,
+    formData.items       ? ['購入品目', formData.items]    : null,
+    formData.reason      ? ['理由', formData.reason]       : null,
+    formData.result      ? ['結果・考察', formData.result] : null,
+    formData.notes       ? ['特記事項', formData.notes]    : null,
+    ['承認経路', `<div class="route-badges">${steps.map(s=>`<span class="route-badge">${s}</span>`).join('')}</div>`],
+  ].filter(Boolean);
+
+  document.getElementById('confirm-table').innerHTML = rows.map(([k, v]) =>
+    `<tr><th>${k}</th><td>${v}</td></tr>`
+  ).join('');
+}
+
+function getApprovalSteps(type, amount) {
+  if (type === 'report')       return ['係長確認'];
+  if (type === 'leave')        return ['係長承認', '課長承認'];
+  if (type === 'purchase')     return amount >= 50000 ? ['係長承認', '課長承認'] : ['係長承認'];
+  if (type === 'verification') return ['係長確認', '課長承認'];
+  return ['係長承認'];
+}
+
+// =====================================================
+// 申請提出
+// =====================================================
+async function submitApplication() {
+  const btn = document.getElementById('btn-submit');
+  btn.disabled = true;
+  btn.textContent = '送信中...';
+
+  const amount = parseInt(formData.amount) || 0;
+  const steps = getApprovalSteps(selectedType, amount);
+
+  const payload = {
+    type:        selectedType,
+    title:       formData.title,
+    content:     formData,
+    amount:      amount,
+    applicant_id: currentUser.id,
+    status:      'pending',
+    current_step: 1,
+    total_steps: steps.length,
+  };
+
+  const { data, error } = await sb.from('applications').insert(payload).select().single();
+
+  if (error) {
+    showToast('送信に失敗しました：' + error.message, 'error');
+    btn.disabled = false;
+    btn.textContent = '提出する';
+    return;
+  }
+
+  // 承認レコード初期化
+  const approvalRows = steps.map((_, i) => ({
+    application_id: data.id,
+    step: i + 1,
+    action: 'pending',
+  }));
+  await sb.from('approvals').insert(approvalRows);
+
+  // 通知（承認者へ）は Edge Functions 経由で行う（今はスキップ）
+
+  document.getElementById('step3-view').style.display = 'none';
+  document.getElementById('complete-view').style.display = 'block';
+  document.getElementById('app-number-display').textContent = data.id.slice(0,8).toUpperCase();
+  showToast('申請を提出しました', 'success');
+}
+
+// =====================================================
+// 下書き保存
+// =====================================================
+async function saveDraft() {
+  if (!document.getElementById('f-title')?.value.trim()) {
+    showToast('件名を入力してください', 'error'); return;
+  }
+  collectFormData();
+  const { error } = await sb.from('applications').insert({
+    type: selectedType, title: formData.title, content: formData,
+    amount: parseInt(formData.amount)||0, applicant_id: currentUser.id,
+    status: 'draft', current_step: 1,
+    total_steps: getApprovalSteps(selectedType, parseInt(formData.amount)||0).length,
+  });
+  if (error) { showToast('保存に失敗しました', 'error'); return; }
+  showToast('下書きを保存しました');
+}
+
+// =====================================================
+// 申請一覧
+// =====================================================
+const STATUS_LABEL = { pending:'承認待ち', approved:'承認済み', rejected:'差し戻し', draft:'下書き', cancelled:'取り消し' };
+
+async function loadApplicationList() {
+  const { data, error } = await sb.from('applications')
+    .select('*').eq('applicant_id', currentUser.id).order('created_at', { ascending: false });
+  if (error) { document.getElementById('app-list').innerHTML = '<div class="loading">読み込みエラー</div>'; return; }
+  allApplications = data || [];
+  renderList(allApplications);
+}
+
+function renderList(items) {
+  if (!items.length) {
+    document.getElementById('app-list').innerHTML = '<div class="loading">申請はありません</div>';
+    return;
+  }
+  document.getElementById('app-list').innerHTML = items.map(a => `
+    <div class="app-item">
+      <div class="status-dot ${a.status}"></div>
+      <div class="info">
+        <div class="title">${a.title}</div>
+        <div class="meta">${TYPE_LABELS[a.type] || a.type} ・ ${formatDate(a.created_at)}</div>
+      </div>
+      <div class="status-label ${a.status}">${STATUS_LABEL[a.status] || a.status}</div>
+    </div>`).join('');
+}
+
+function filterList(status, tab) {
+  document.querySelectorAll('.tab-bar .tab').forEach(t => t.classList.remove('active'));
+  tab.classList.add('active');
+  renderList(status === 'all' ? allApplications : allApplications.filter(a => a.status === status));
+}
+
+// =====================================================
+// 承認一覧（承認者向け）
+// =====================================================
+async function loadApprovalList() {
+  const role = currentUserProfile?.role;
+  if (!['team_leader','section_chief','admin'].includes(role)) return;
+
+  const { data, error } = await sb.from('applications')
+    .select('*, users!applicant_id(name, department)')
+    .eq('status', 'pending')
+    .order('created_at', { ascending: true });
+
+  if (error) { document.getElementById('approval-list').innerHTML = '<div class="loading">読み込みエラー</div>'; return; }
+
+  if (!data?.length) {
+    document.getElementById('approval-list').innerHTML = '<div class="loading">承認待ちの申請はありません</div>';
+    return;
+  }
+
+  document.getElementById('approval-list').innerHTML = data.map(a => `
+    <div class="app-item">
+      <div class="status-dot pending"></div>
+      <div class="info">
+        <div class="title">${a.title}</div>
+        <div class="meta">${a.users?.name}（${a.users?.department}）・${TYPE_LABELS[a.type]} ・ ${formatDate(a.created_at)}</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-shrink:0">
+        <button class="btn btn-primary" style="padding:6px 14px;font-size:12px" onclick="approveApp('${a.id}', 'approved')">承認</button>
+        <button class="btn btn-secondary" style="padding:6px 14px;font-size:12px" onclick="approveApp('${a.id}', 'rejected')">差し戻し</button>
+      </div>
+    </div>`).join('');
+}
+
+async function approveApp(id, action) {
+  const comment = action === 'rejected' ? prompt('差し戻し理由を入力してください') : null;
+  if (action === 'rejected' && comment === null) return;
+
+  const app = await sb.from('applications').select('*').eq('id', id).single();
+  const step = app.data?.current_step || 1;
+  const totalSteps = app.data?.total_steps || 1;
+
+  await sb.from('approvals').update({ action, comment, approver_id: currentUser.id, acted_at: new Date().toISOString() })
+    .eq('application_id', id).eq('step', step);
+
+  const newStatus = action === 'rejected'
+    ? 'rejected'
+    : (step >= totalSteps ? 'approved' : 'pending');
+  const newStep = action === 'approved' && step < totalSteps ? step + 1 : step;
+
+  await sb.from('applications').update({ status: newStatus, current_step: newStep }).eq('id', id);
+  showToast(action === 'approved' ? '承認しました' : '差し戻しました', action === 'approved' ? 'success' : 'error');
+  loadApprovalList();
+}
+
+// =====================================================
+// ユーティリティ
+// =====================================================
+function resetForm() {
+  selectedType = null; formData = {};
+  document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('selected'));
+  document.getElementById('route-info').classList.remove('visible');
+  document.getElementById('btn-next1').disabled = true;
+  document.getElementById('step1-view').style.display = '';
+  document.getElementById('step2-view').style.display = 'none';
+  document.getElementById('step3-view').style.display = 'none';
+  document.getElementById('complete-view').style.display = 'none';
+}
+
+function today() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function formatDate(iso) {
+  if (!iso) return '';
+  return new Date(iso).toLocaleDateString('ja-JP', { year:'numeric', month:'short', day:'numeric' });
+}
+
+function showToast(msg, type = '') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'show ' + type;
+  setTimeout(() => { t.className = type; }, 3000);
+}
+</script>
+</body>
+</html>
