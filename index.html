@@ -511,6 +511,10 @@
   .status-dot.approved { background: #27ae60; }
   .status-dot.rejected { background: var(--red); }
   .status-dot.draft    { background: var(--gray-300); }
+
+  /* 差し戻しタブ強調 */
+  .rejected-tab { color: var(--red) !important; }
+  .rejected-tab.active { border-bottom-color: var(--red) !important; background: #fff8f8; }
   .app-item .info { flex: 1; min-width: 0; }
   .app-item .info .title { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .app-item .info .meta  { font-size: 12px; color: var(--gray-500); margin-top: 2px; }
@@ -798,11 +802,11 @@
         <h2>申請一覧</h2>
         <button class="btn btn-primary" onclick="showPage('new')" style="padding:8px 16px;font-size:13px">＋ 新規申請</button>
       </div>
-      <div class="tab-bar">
+      <div class="tab-bar" id="list-tab-bar">
         <div class="tab active" onclick="filterList('all', this)">すべて</div>
         <div class="tab" onclick="filterList('pending', this)">承認待ち</div>
         <div class="tab" onclick="filterList('approved', this)">承認済み <span id="badge-approved" class="nav-badge" style="display:none"></span></div>
-        <div class="tab" onclick="filterList('rejected', this)">差し戻し <span id="badge-rejected" class="nav-badge" style="display:none"></span></div>
+        <div class="tab rejected-tab" onclick="filterList('rejected', this)">差し戻し <span id="badge-rejected" class="nav-badge" style="display:none"></span></div>
         <div class="tab" onclick="filterList('draft', this)">下書き</div>
       </div>
       <div id="app-list"><div class="loading">読み込み中...</div></div>
@@ -1823,7 +1827,20 @@ async function loadApplicationList() {
     .select('*').eq('applicant_id', currentUser.id).order('created_at', { ascending: false });
   if (error) { document.getElementById('app-list').innerHTML = '<div class="loading">読み込みエラー</div>'; return; }
   allApplications = data || [];
-  renderList(allApplications);
+
+  // 差し戻しビューをリセット
+  const rejView = document.getElementById('rejected-view');
+  if (rejView) rejView.style.display = 'none';
+  document.getElementById('app-list').style.display = '';
+
+  // アクティブなタブを確認して適切なビューを表示
+  const activeTab = document.querySelector('#list-tab-bar .tab.active');
+  const activeStatus = activeTab?.textContent?.trim().replace(/\d+/g, '').trim();
+  if (activeStatus === '差し戻し') {
+    renderRejectedList(allApplications.filter(a => a.status === 'rejected'));
+  } else {
+    renderList(allApplications);
+  }
 }
 
 function renderList(items) {
@@ -1847,7 +1864,7 @@ function renderList(items) {
           ? `<button class="btn btn-ghost app-edit" data-id="${a.id}" style="padding:5px 12px;font-size:12px">編集</button>` : ''}
         <button class="btn btn-secondary app-dup" data-id="${a.id}" style="padding:5px 12px;font-size:12px">複製</button>
         <button class="btn btn-secondary app-pdf" data-id="${a.id}" style="padding:5px 12px;font-size:12px">PDF</button>
-        ${a.status === 'draft'
+        ${(a.status === 'draft' || a.status === 'rejected')
           ? `<button class="btn btn-secondary app-del" data-id="${a.id}" style="padding:5px 12px;font-size:12px;color:var(--red);border-color:var(--red);">削除</button>` : ''}
         <div class="status-label ${a.status}" style="min-width:56px;text-align:right">${STATUS_LABEL[a.status] || a.status}</div>
       </div>
@@ -1867,9 +1884,113 @@ function renderList(items) {
 }
 
 function filterList(status, tab) {
-  document.querySelectorAll('.tab-bar .tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('#list-tab-bar .tab').forEach(t => t.classList.remove('active'));
   tab.classList.add('active');
-  renderList(status === 'all' ? allApplications : allApplications.filter(a => a.status === status));
+
+  if (status === 'rejected') {
+    renderRejectedList(allApplications.filter(a => a.status === 'rejected'));
+  } else {
+    // 差し戻しビューを非表示にして通常一覧を表示
+    const rejView = document.getElementById('rejected-view');
+    if (rejView) rejView.style.display = 'none';
+    document.getElementById('app-list').style.display = '';
+    renderList(status === 'all' ? allApplications : allApplications.filter(a => a.status === status));
+  }
+}
+
+// 差し戻し一覧：理由・修正アクションを強調表示
+function renderRejectedList(items) {
+  document.getElementById('app-list').style.display = 'none';
+
+  let rejView = document.getElementById('rejected-view');
+  if (!rejView) {
+    rejView = document.createElement('div');
+    rejView.id = 'rejected-view';
+    document.getElementById('app-list').insertAdjacentElement('afterend', rejView);
+  }
+  rejView.style.display = '';
+
+  if (!items.length) {
+    rejView.innerHTML = '<div class="loading">差し戻しされた申請はありません</div>';
+    return;
+  }
+
+  rejView.innerHTML = '';
+  items.forEach(a => {
+    const card = document.createElement('div');
+    card.style.cssText = 'background:var(--white);border:1.5px solid #f5b7b1;border-left:4px solid var(--red);border-radius:var(--radius);padding:14px 16px;margin-bottom:10px;';
+    card.dataset.id = a.id;
+
+    // ヘッダー行
+    const header = document.createElement('div');
+    header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;';
+
+    const titleWrap = document.createElement('div');
+    titleWrap.style.flex = '1';
+    const titleEl = document.createElement('div');
+    titleEl.style.cssText = 'font-size:14px;font-weight:700;color:var(--gray-900);';
+    titleEl.textContent = a.title;
+    const metaEl = document.createElement('div');
+    metaEl.style.cssText = 'font-size:12px;color:var(--gray-500);margin-top:2px;';
+    metaEl.textContent = (TYPE_LABELS[a.type] || a.type) + ' ・ ' + formatDate(a.created_at);
+    titleWrap.append(titleEl, metaEl);
+
+    // ボタン群
+    const btnWrap = document.createElement('div');
+    btnWrap.style.cssText = 'display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;';
+
+    const detailBtn = document.createElement('button');
+    detailBtn.className = 'btn btn-secondary';
+    detailBtn.style.cssText = 'padding:5px 12px;font-size:12px';
+    detailBtn.textContent = '詳細';
+    detailBtn.onclick = () => showDetail(a.id);
+
+    const editBtn = document.createElement('button');
+    editBtn.className = 'btn btn-primary';
+    editBtn.style.cssText = 'padding:5px 12px;font-size:12px';
+    editBtn.textContent = '修正して再提出';
+    editBtn.onclick = () => editDraft(a.id);
+
+    const dupBtn = document.createElement('button');
+    dupBtn.className = 'btn btn-secondary';
+    dupBtn.style.cssText = 'padding:5px 12px;font-size:12px';
+    dupBtn.textContent = '複製';
+    dupBtn.onclick = () => duplicateApp(a.id);
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'btn btn-secondary';
+    delBtn.style.cssText = 'padding:5px 12px;font-size:12px;color:var(--red);border-color:var(--red);';
+    delBtn.textContent = '削除';
+    delBtn.onclick = () => confirmDeleteApp(a.id, false);
+
+    btnWrap.append(detailBtn, editBtn, dupBtn, delBtn);
+    header.append(titleWrap, btnWrap);
+
+    // 差し戻し理由ボックス
+    const reasonBox = document.createElement('div');
+    reasonBox.style.cssText = 'margin-top:10px;background:#fff0f0;border-radius:var(--radius);padding:10px 14px;font-size:12px;line-height:1.8;color:var(--gray-900);';
+
+    if (a.rejection_reason) {
+      const label = document.createElement('div');
+      label.style.cssText = 'font-weight:700;color:var(--red-dark);margin-bottom:4px;';
+      label.textContent = '↩️ 差し戻し理由';
+      const reason = document.createElement('div');
+      // 【問題点】【詳細】を強調
+      reason.innerHTML = a.rejection_reason
+        .split(NL)
+        .map(line => line.startsWith('【')
+          ? '<span style="font-weight:700;color:var(--red-dark);">' + escHtml(line) + '</span>'
+          : escHtml(line))
+        .join('<br>');
+      reasonBox.append(label, reason);
+    } else {
+      reasonBox.style.color = 'var(--gray-500)';
+      reasonBox.textContent = '差し戻し理由の記載なし';
+    }
+
+    card.append(header, reasonBox);
+    rejView.appendChild(card);
+  });
 }
 
 // =====================================================
@@ -2152,9 +2273,9 @@ async function confirmDeleteApp(id, isAdmin) {
   const title  = target?.title || '申請';
   const status = target?.status || '';
 
-  // 申請者：draft のみ削除可
-  if (!isAdmin && status !== 'draft') {
-    showToast('削除できるのは下書きのみです', 'error');
+  // 申請者：draft と rejected のみ削除可
+  if (!isAdmin && status !== 'draft' && status !== 'rejected') {
+    showToast('削除できるのは下書きと差し戻しのみです', 'error');
     return;
   }
 
@@ -2329,6 +2450,12 @@ async function refreshBadges() {
   // 申請一覧内タブバッジ
   setBadge('badge-approved', approved.length);
   setBadge('badge-rejected', rejected.length);
+
+  // 差し戻しタブを件数がある場合に強調
+  const rejTab = document.querySelector('.rejected-tab');
+  if (rejTab) {
+    rejTab.style.fontWeight = rejected.length > 0 ? '700' : '';
+  }
 }
 
 function setBadge(id, count) {
