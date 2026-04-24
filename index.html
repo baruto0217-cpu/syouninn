@@ -2587,6 +2587,9 @@ async function exportPDF(id) {
   ]);
 
   // 印刷用HTMLを生成してiframeで印刷
+  // 改行をbrに変換するヘルパー（テンプレートリテラル内で正規表現を使わないため）
+  const nl2br = v => String(v || '').split('\n').join('<br>');
+
   const printHTML = `<!DOCTYPE html>
 <html lang="ja"><head>
 <meta charset="UTF-8">
@@ -2620,8 +2623,7 @@ async function exportPDF(id) {
 <div class="body">
   <div class="section-title">申請内容</div>
   <table>
-    ${fieldRows.map(([k,v]) => `<tr><th>${k}</th><td>${String(v).replace(/
-/g,'<br>')}</td></tr>`).join('')}
+    ${fieldRows.map(([k,v]) => `<tr><th>${k}</th><td>${nl2br(v)}</td></tr>`).join('')}
   </table>
 
   ${approvalRows.length ? `
