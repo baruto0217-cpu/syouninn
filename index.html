@@ -1697,26 +1697,28 @@ async function submitApplication() {
     approver_id:    selectedApprovers[i + 1] || null,
   }));
   await sb.from('approvals').insert(approvalRows);
+
+  // ステップ1の承認者へ通知を自動送信（リセット前に取得）
+  const firstApproverId = selectedApprovers[1];
   // 選択リセット
   selectedApprovers = {};
 
-  // ステップ1の承認者へ通知を自動送信
-  const firstApprover = selectedApprovers[1];
-  if (firstApprover) {
+  if (firstApproverId) {
     const appTitle = formData.title || '申請';
-    await sb.from('notifications').insert({
-      user_id:        firstApprover,
+    const { error: notifErr } = await sb.from('notifications').insert({
+      user_id:        firstApproverId,
       application_id: data.id,
       message: JSON.stringify({
         type:        'mail',
         subject:     `【承認依頼】${appTitle}`,
-        body:        `${currentUserProfile?.name || ''}さんから承認依頼が届きました。\n\n書類種別：${TYPE_LABELS[data.type] || data.type}\n件名：${appTitle}\n\n申請一覧の「承認待ち」タブから内容を確認してください。`,
+        body:        `${currentUserProfile?.name || ''}さんから承認依頼が届きました。\n\n書類種別：${TYPE_LABELS[data.type] || data.type}\n件名：${appTitle}\n\n承認待ちタブから内容を確認してください。`,
         sender_id:   currentUser.id,
         sender_name: currentUserProfile?.name || '',
         sent_at:     new Date().toISOString(),
       }),
       is_read: false,
     });
+    if (notifErr) console.error('通知送信エラー:', notifErr.message);
   }
 
   document.getElementById('step3-view').style.display = 'none';
