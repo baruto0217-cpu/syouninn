@@ -2722,7 +2722,7 @@ function buildDynamicFormFromConfig(type) {
   let html = '';
   fields.forEach(f => {
     const fid = 'f-' + f.id.replace(/_/g, '-');
-    const val = formData[f.id] || '';
+    const val = escHtml(String(formData[f.id] || ''));
     const req = f.required ? '<span class="required">*</span>' : '';
     if (f.type === 'textarea') {
       html += `<div class="form-row"><label>${f.label}${req}</label>
@@ -2933,48 +2933,103 @@ function renderUserFieldEditor() {
   const isAdmin = currentUserProfile?.role === 'admin';
   const el = document.getElementById('form-edit-fields');
   if (!el) return;
+  el.innerHTML = '';
 
-  el.innerHTML = _userEditingFields.map((f, i) => {
-    const reqBadge = f.required
-      ? `<span class="required-badge">必須</span>`
-      : `<span class="optional-badge">任意</span>`;
-    // 管理者のみ必須切り替えボタンを表示
-    const reqToggle = isAdmin
-      ? `<button class="btn btn-secondary" style="padding:3px 10px;font-size:11px"
-           onclick="toggleUserFieldRequired(${i})">${f.required ? '任意にする' : '必須にする'}</button>`
-      : reqBadge;
+  const TYPE_LABELS_MAP = {text:'テキスト',textarea:'複数行',date:'日付',number:'数値',select:'選択肢'};
 
-    // 入力形式の選択肢テキスト（selectの場合）
-    const hintLabel = f.type === 'select' ? '選択肢（カンマ区切り）' : 'ヒント文';
+  _userEditingFields.forEach((f, i) => {
+    const row = document.createElement('div');
+    row.className = 'user-field-row';
+    row.id = 'ufield-' + i;
 
-    return `<div class="user-field-row" id="ufield-${i}">
-      <div class="row1">
-        <input type="text" class="field-label-input" value="${f.label}"
-          placeholder="項目名" onchange="_userEditingFields[${i}].label=this.value">
-        <select class="field-type-select" onchange="_userEditingFields[${i}].type=this.value;renderUserFieldEditor()">
-          ${['text','textarea','date','number','select'].map(t =>
-            `<option value="${t}" ${f.type===t?'selected':''}>${
-              {text:'テキスト',textarea:'複数行',date:'日付',number:'数値',select:'選択肢'}[t]
-            }</option>`).join('')}
-        </select>
-        ${reqToggle}
-        <button class="btn btn-secondary" style="padding:3px 8px;font-size:11px;color:var(--red);border-color:var(--red)"
-          onclick="removeUserField(${i})">削除</button>
-      </div>
-      <div class="row2">
-        <span style="font-size:11px;color:var(--gray-500);white-space:nowrap;">${hintLabel}：</span>
-        <input type="text" class="field-hint-input" value="${f.placeholder||''}"
-          placeholder="${f.type === 'select' ? '例：選択肢A,選択肢B,選択肢C' : '入力例やヒントを記入'}"
-          onchange="_userEditingFields[${i}].placeholder=this.value">
-        <div style="display:flex;gap:4px;">
-          <button class="btn btn-secondary" style="padding:3px 8px;font-size:13px" title="上へ"
-            onclick="moveUserField(${i}, -1)" ${i===0?'disabled':''}>↑</button>
-          <button class="btn btn-secondary" style="padding:3px 8px;font-size:13px" title="下へ"
-            onclick="moveUserField(${i}, 1)" ${i===_userEditingFields.length-1?'disabled':''}>↓</button>
-        </div>
-      </div>
-    </div>`;
-  }).join('');
+    // --- 行1: ラベル・タイプ・必須・削除 ---
+    const row1 = document.createElement('div');
+    row1.className = 'row1';
+
+    // ラベル入力
+    const labelInput = document.createElement('input');
+    labelInput.type = 'text';
+    labelInput.className = 'field-label-input';
+    labelInput.value = f.label;           // .value は安全（XSSなし）
+    labelInput.placeholder = '項目名';
+    labelInput.addEventListener('change', () => { _userEditingFields[i].label = labelInput.value; });
+
+    // タイプ選択
+    const typeSelect = document.createElement('select');
+    typeSelect.className = 'field-type-select';
+    ['text','textarea','date','number','select'].forEach(t => {
+      const opt = document.createElement('option');
+      opt.value = t;
+      opt.textContent = TYPE_LABELS_MAP[t] || t;
+      if (f.type === t) opt.selected = true;
+      typeSelect.appendChild(opt);
+    });
+    typeSelect.addEventListener('change', () => {
+      _userEditingFields[i].type = typeSelect.value;
+      renderUserFieldEditor();
+    });
+
+    // 必須切り替え（管理者のみ）
+    let reqEl;
+    if (isAdmin) {
+      reqEl = document.createElement('button');
+      reqEl.className = 'btn btn-secondary';
+      reqEl.style.cssText = 'padding:3px 10px;font-size:11px';
+      reqEl.textContent = f.required ? '任意にする' : '必須にする';
+      reqEl.addEventListener('click', () => { _userEditingFields[i].required = !f.required; renderUserFieldEditor(); });
+    } else {
+      reqEl = document.createElement('span');
+      reqEl.className = f.required ? 'required-badge' : 'optional-badge';
+      reqEl.textContent = f.required ? '必須' : '任意';
+    }
+
+    // 削除ボタン
+    const delBtn = document.createElement('button');
+    delBtn.className = 'btn btn-secondary';
+    delBtn.style.cssText = 'padding:3px 8px;font-size:11px;color:var(--red);border-color:var(--red)';
+    delBtn.textContent = '削除';
+    delBtn.addEventListener('click', () => removeUserField(i));
+
+    row1.append(labelInput, typeSelect, reqEl, delBtn);
+
+    // --- 行2: ヒント・並び替え ---
+    const row2 = document.createElement('div');
+    row2.className = 'row2';
+
+    const hintLabel = document.createElement('span');
+    hintLabel.style.cssText = 'font-size:11px;color:var(--gray-500);white-space:nowrap;';
+    hintLabel.textContent = (f.type === 'select' ? '選択肢（カンマ区切り）' : 'ヒント文') + '：';
+
+    const hintInput = document.createElement('input');
+    hintInput.type = 'text';
+    hintInput.className = 'field-hint-input';
+    hintInput.value = f.placeholder || '';
+    hintInput.placeholder = f.type === 'select' ? '例：選択肢A,選択肢B,選択肢C' : '入力例やヒントを記入';
+    hintInput.addEventListener('change', () => { _userEditingFields[i].placeholder = hintInput.value; });
+
+    const btnWrap = document.createElement('div');
+    btnWrap.style.cssText = 'display:flex;gap:4px;';
+
+    const upBtn = document.createElement('button');
+    upBtn.className = 'btn btn-secondary';
+    upBtn.style.cssText = 'padding:3px 8px;font-size:13px';
+    upBtn.textContent = '↑';
+    upBtn.disabled = (i === 0);
+    upBtn.addEventListener('click', () => moveUserField(i, -1));
+
+    const downBtn = document.createElement('button');
+    downBtn.className = 'btn btn-secondary';
+    downBtn.style.cssText = 'padding:3px 8px;font-size:13px';
+    downBtn.textContent = '↓';
+    downBtn.disabled = (i === _userEditingFields.length - 1);
+    downBtn.addEventListener('click', () => moveUserField(i, 1));
+
+    btnWrap.append(upBtn, downBtn);
+    row2.append(hintLabel, hintInput, btnWrap);
+
+    row.append(row1, row2);
+    el.appendChild(row);
+  });
 }
 
 function toggleUserFieldRequired(i) {
@@ -3042,24 +3097,63 @@ function loadFormConfig() {
 function renderFieldEditor() {
   const el = document.getElementById('form-fields-editor');
   if (!el) return;
-  el.innerHTML = editingFields.map((f, i) => `
-    <div class="field-editor-row">
-      <span class="drag-handle">⠿</span>
-      <input type="text" value="${f.label}" placeholder="ラベル名" onchange="editingFields[${i}].label=this.value" style="flex:1.2">
-      <select onchange="editingFields[${i}].type=this.value" style="width:90px">
-        ${['text','textarea','date','number','select'].map(t =>
-          `<option value="${t}" ${f.type===t?'selected':''}>${
-            {text:'テキスト',textarea:'複数行',date:'日付',number:'数値',select:'選択肢'}[t]
-          }</option>`).join('')}
-      </select>
-      <input type="text" value="${f.placeholder||''}" placeholder="ヒント文 / 選択肢(カンマ区切り)" onchange="editingFields[${i}].placeholder=this.value" style="flex:2">
-      <label style="font-size:11px;white-space:nowrap;display:flex;align-items:center;gap:4px;cursor:pointer"
-        title="必須設定は管理者のみ変更可能">
-        <input type="checkbox" ${f.required?'checked':''} onchange="editingFields[${i}].required=this.checked">
-        <span style="color:var(--red-dark);font-weight:600">必須</span>
-      </label>
-      <button class="btn btn-secondary btn-del" onclick="removeField(${i})">削除</button>
-    </div>`).join('');
+  el.innerHTML = '';
+
+  const TYPE_LABELS_MAP = {text:'テキスト',textarea:'複数行',date:'日付',number:'数値',select:'選択肢'};
+
+  editingFields.forEach((f, i) => {
+    const row = document.createElement('div');
+    row.className = 'field-editor-row';
+
+    const handle = document.createElement('span');
+    handle.className = 'drag-handle';
+    handle.textContent = '⠿';
+
+    const labelInput = document.createElement('input');
+    labelInput.type = 'text';
+    labelInput.value = f.label;
+    labelInput.placeholder = 'ラベル名';
+    labelInput.style.flex = '1.2';
+    labelInput.addEventListener('change', () => { editingFields[i].label = labelInput.value; });
+
+    const typeSelect = document.createElement('select');
+    typeSelect.style.width = '90px';
+    ['text','textarea','date','number','select'].forEach(t => {
+      const opt = document.createElement('option');
+      opt.value = t;
+      opt.textContent = TYPE_LABELS_MAP[t] || t;
+      if (f.type === t) opt.selected = true;
+      typeSelect.appendChild(opt);
+    });
+    typeSelect.addEventListener('change', () => { editingFields[i].type = typeSelect.value; });
+
+    const hintInput = document.createElement('input');
+    hintInput.type = 'text';
+    hintInput.value = f.placeholder || '';
+    hintInput.placeholder = 'ヒント文 / 選択肢(カンマ区切り)';
+    hintInput.style.flex = '2';
+    hintInput.addEventListener('change', () => { editingFields[i].placeholder = hintInput.value; });
+
+    const reqLabel = document.createElement('label');
+    reqLabel.style.cssText = 'font-size:11px;white-space:nowrap;display:flex;align-items:center;gap:4px;cursor:pointer';
+    reqLabel.title = '必須設定は管理者のみ変更可能';
+    const reqCb = document.createElement('input');
+    reqCb.type = 'checkbox';
+    reqCb.checked = !!f.required;
+    reqCb.addEventListener('change', () => { editingFields[i].required = reqCb.checked; });
+    const reqSpan = document.createElement('span');
+    reqSpan.style.cssText = 'color:var(--red-dark);font-weight:600';
+    reqSpan.textContent = '必須';
+    reqLabel.append(reqCb, reqSpan);
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'btn btn-secondary btn-del';
+    delBtn.textContent = '削除';
+    delBtn.addEventListener('click', () => removeField(i));
+
+    row.append(handle, labelInput, typeSelect, hintInput, reqLabel, delBtn);
+    el.appendChild(row);
+  });
 }
 
 function addFormField() {
