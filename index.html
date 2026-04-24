@@ -646,6 +646,8 @@
   .role-badge.team_leader    { background:#EBF5FB; color:#1A5276; }
   .role-badge.assistant_chief{ background:#F4ECF7; color:#6C3483; }
   .role-badge.section_chief  { background:#FDFEFE; color:#922B21; border:1px solid #F5B7B1; }
+  .role-badge.deputy_chief   { background:#FEF9E7; color:#7D6608; border:1px solid #F9E79F; }
+  .role-badge.chief          { background:#FDF2F8; color:#76448A; border:1px solid #D7BDE2; }
   .role-badge.admin          { background:#EAFAF1; color:#1E8449; }
   .selected-badge {
     display:inline-flex; align-items:center; gap:4px;
@@ -747,10 +749,13 @@
         <label>役職<span class="required">*</span></label>
         <select id="reg-role">
           <option value="">選択してください</option>
-          <option value="staff">一般職員（staff）</option>
-          <option value="team_leader">係長（team_leader）</option>
-          <option value="section_chief">課長（section_chief）</option>
-          <option value="admin">管理者（admin）</option>
+          <option value="staff">一般職員</option>
+          <option value="team_leader">係長</option>
+          <option value="assistant_chief">課長補佐</option>
+          <option value="section_chief">課長</option>
+          <option value="deputy_chief">副署長</option>
+          <option value="chief">署長</option>
+          <option value="admin">管理者</option>
         </select>
       </div>
       <div style="font-size:11px;color:var(--gray-500);margin-bottom:12px;line-height:1.6;background:var(--gray-100);padding:8px 10px;border-radius:var(--radius);">
@@ -1181,7 +1186,7 @@ async function initApp(user) {
     `${profile.name}（${profile.department}）`;
 
   // 承認者タブの表示
-  if (['team_leader','section_chief','admin'].includes(profile.role)) {
+  if (['team_leader','assistant_chief','section_chief','deputy_chief','chief','admin'].includes(profile.role)) {
     document.getElementById('nav-approval').style.display = 'block';
   }
   // 管理者タブの表示
@@ -1322,7 +1327,7 @@ const TYPE_LABELS = {
   other:        'その他',
 };
 const ROUTE_DESCRIPTIONS = {
-  report:       '承認経路：<strong>係長確認</strong>（1段階）',
+  report:       '承認経路：<strong>係長</strong> → <strong>課長補佐</strong> → <strong>課長</strong> → <strong>副署長</strong> → <strong>署長</strong>（5段階）',
   leave:        '承認経路：<strong>係長承認</strong> → <strong>課長承認</strong>（2段階）',
   purchase:     '承認経路：<strong>係長承認</strong>（5万円以上は課長承認も追加）',
   verification: '承認経路：<strong>係長確認</strong> → <strong>課長承認</strong>（2段階）',
@@ -1539,13 +1544,13 @@ async function buildApproverSelector() {
   selectedApprovers = {};
 
   const ROLE_NAMES = {
-    team_leader: '係長', assistant_chief: '補佐',
-    section_chief: '課長', admin: '管理者'
+    team_leader: '係長', assistant_chief: '課長補佐',
+    section_chief: '課長', deputy_chief: '副署長', chief: '署長', admin: '管理者'
   };
 
   // ステップごとに推奨ロールを設定
   const STEP_ROLES = {
-    report:       ['team_leader', 'assistant_chief'],
+    report:       ['team_leader', 'assistant_chief', 'section_chief', 'deputy_chief', 'chief'],
     leave:        ['team_leader', 'assistant_chief', 'section_chief'],
     purchase:     amount >= 50000
                     ? ['team_leader', 'assistant_chief', 'section_chief']
@@ -1556,9 +1561,18 @@ async function buildApproverSelector() {
   const stepRoles = STEP_ROLES[selectedType] || ['team_leader', 'assistant_chief', 'section_chief', 'admin'];
 
   // ステップ数に合わせた推奨ロール割り当て
+  // 報告書（5段階）の場合はステップごとに役職を割り当て
+  const reportStepRoles = [
+    ['team_leader'],
+    ['assistant_chief'],
+    ['section_chief'],
+    ['deputy_chief'],
+    ['chief'],
+  ];
   const stepRoleMap = steps.map((label, i) => {
+    if (selectedType === 'report' && reportStepRoles[i]) return reportStepRoles[i];
     if (steps.length === 1) return ['team_leader', 'assistant_chief'];
-    if (i === steps.length - 1) return ['section_chief', 'admin'];
+    if (i === steps.length - 1) return ['section_chief', 'deputy_chief', 'chief', 'admin'];
     return ['team_leader', 'assistant_chief'];
   });
 
@@ -1618,8 +1632,8 @@ function selectApprover(step, uid) {
 
 function updateConfirmApprovers() {
   const ROLE_NAMES = {
-    team_leader: '係長', assistant_chief: '補佐',
-    section_chief: '課長', admin: '管理者'
+    team_leader: '係長', assistant_chief: '課長補佐',
+    section_chief: '課長', deputy_chief: '副署長', chief: '署長', admin: '管理者'
   };
   const amount = parseInt(formData.amount) || 0;
   const steps  = getApprovalSteps(selectedType, amount);
@@ -1664,7 +1678,7 @@ function buildConfirmTable() {
 }
 
 function getApprovalSteps(type, amount) {
-  if (type === 'report')       return ['係長確認'];
+  if (type === 'report')       return ['係長確認', '課長補佐確認', '課長確認', '副署長確認', '署長決裁'];
   if (type === 'leave')        return ['係長承認', '課長承認'];
   if (type === 'purchase')     return amount >= 50000 ? ['係長承認', '課長承認'] : ['係長承認'];
   if (type === 'verification') return ['係長確認', '課長承認'];
@@ -2136,11 +2150,13 @@ let allApproverUsers  = [];
 
 const ROLE_LABEL = {
   team_leader:     '係長',
-  assistant_chief: '補佐',
+  assistant_chief: '課長補佐',
   section_chief:   '課長',
+  deputy_chief:    '副署長',
+  chief:           '署長',
   admin:           '管理者',
 };
-const APPROVER_ROLES = ['team_leader', 'assistant_chief', 'section_chief', 'admin'];
+const APPROVER_ROLES = ['team_leader', 'assistant_chief', 'section_chief', 'deputy_chief', 'chief', 'admin'];
 
 async function loadMailPage() {
   await loadNotifPage();
@@ -2741,8 +2757,8 @@ async function loadAdminUsers() {
   const el = document.getElementById('admin-user-list');
   if (!users?.length) { el.innerHTML = '<div class="loading">ユーザーがいません</div>'; return; }
 
-  const ROLES = ['staff','team_leader','assistant_chief','section_chief','admin'];
-  const ROLE_NAMES = { staff:'一般職員', team_leader:'係長', assistant_chief:'補佐', section_chief:'課長', admin:'管理者' };
+  const ROLES = ['staff','team_leader','assistant_chief','section_chief','deputy_chief','chief','admin'];
+  const ROLE_NAMES = { staff:'一般職員', team_leader:'係長', assistant_chief:'課長補佐', section_chief:'課長', deputy_chief:'副署長', chief:'署長', admin:'管理者' };
 
   el.innerHTML = users.map(u => `
     <div class="admin-user-row">
@@ -2781,8 +2797,8 @@ async function loadAdminRoles() {
   const el = document.getElementById('admin-role-list');
   if (!users?.length) { el.innerHTML = '<div class="loading">承認待ちの役職変更はありません</div>'; return; }
 
-  const ROLE_NAMES = { staff:'一般職員', team_leader:'係長', assistant_chief:'補佐', section_chief:'課長', admin:'管理者' };
-  const ROLES = ['staff','team_leader','assistant_chief','section_chief','admin'];
+  const ROLE_NAMES = { staff:'一般職員', team_leader:'係長', assistant_chief:'課長補佐', section_chief:'課長', deputy_chief:'副署長', chief:'署長', admin:'管理者' };
+  const ROLES = ['staff','team_leader','assistant_chief','section_chief','deputy_chief','chief','admin'];
 
   el.innerHTML = users.map(u => `
     <div class="admin-user-row">
@@ -3059,7 +3075,7 @@ async function showDetail(id) {
 
   document.getElementById('detail-modal-title').textContent = a.title;
 
-  const ROLE_NAMES = { staff:'一般職員', team_leader:'係長', assistant_chief:'補佐', section_chief:'課長', admin:'管理者' };
+  const ROLE_NAMES = { staff:'一般職員', team_leader:'係長', assistant_chief:'課長補佐', section_chief:'課長', deputy_chief:'副署長', chief:'署長', admin:'管理者' };
   const STEP_STATUS = { approved:'承認済み', rejected:'差し戻し', pending:'承認待ち' };
 
   // 基本情報テーブル
@@ -3155,7 +3171,7 @@ async function exportPDF(id) {
   const { data: approvals } = await sb.from('approvals')
     .select('*, users!approver_id(name, role)').eq('application_id', id).order('step');
 
-  const ROLE_NAMES = { staff:'一般職員', team_leader:'係長', assistant_chief:'補佐', section_chief:'課長', admin:'管理者' };
+  const ROLE_NAMES = { staff:'一般職員', team_leader:'係長', assistant_chief:'課長補佐', section_chief:'課長', deputy_chief:'副署長', chief:'署長', admin:'管理者' };
   const STEP_STATUS = { approved:'承認済み', rejected:'差し戻し', pending:'承認待ち' };
   const c = a.content || {};
 
