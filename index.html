@@ -510,17 +510,60 @@
   /* ===================== ローディング ===================== */
   .loading { text-align: center; padding: 40px; color: var(--gray-500); font-size: 14px; }
 
+  /* ===================== 管理者画面 ===================== */
+  .admin-user-row {
+    display:flex; align-items:center; gap:12px;
+    padding:10px 0; border-bottom:1px solid var(--gray-100); font-size:13px;
+  }
+  .admin-user-row:last-child { border-bottom:none; }
+  .admin-user-row .name { font-weight:600; flex:1; }
+  .admin-user-row .meta { font-size:11px; color:var(--gray-500); }
+  .admin-user-row select { font-size:12px; padding:4px 8px; border-radius:var(--radius); border:1.5px solid var(--gray-300); }
+  .field-editor-row {
+    display:flex; gap:8px; align-items:center;
+    padding:8px; background:var(--gray-100); border-radius:var(--radius); margin-bottom:6px;
+  }
+  .field-editor-row input, .field-editor-row select { flex:1; font-size:12px; padding:6px 8px; }
+  .field-editor-row .drag-handle { cursor:grab; color:var(--gray-500); font-size:16px; flex-shrink:0; }
+  .field-editor-row .btn-del { padding:4px 10px; font-size:11px; flex-shrink:0; }
+
   /* ===================== メールユーザー選択 ===================== */
   .mail-user-item {
     display: flex; align-items: center; gap: 10px;
-    padding: 8px 10px; cursor: pointer; border-radius: var(--radius);
+    padding: 9px 10px; cursor: pointer; border-radius: var(--radius);
     transition: background 0.1s;
   }
   .mail-user-item:hover { background: var(--gray-100); }
+  .mail-user-item.checked { background: var(--red-light); }
   .mail-user-item input[type="checkbox"] { width:16px; height:16px; accent-color: var(--red); flex-shrink:0; }
   .mail-user-item .user-info { flex:1; }
   .mail-user-item .user-name { font-size:13px; font-weight:600; }
   .mail-user-item .user-meta { font-size:11px; color:var(--gray-500); }
+  .role-group-header {
+    font-size:11px; font-weight:700; color:var(--gray-500);
+    padding:8px 10px 4px; letter-spacing:0.05em;
+    background: var(--gray-100); margin:4px 0 2px;
+    border-radius: var(--radius);
+    display:flex; align-items:center; gap:6px;
+  }
+  .role-badge {
+    display:inline-block; font-size:10px; font-weight:700;
+    padding:2px 8px; border-radius:20px;
+  }
+  .role-badge.team_leader    { background:#EBF5FB; color:#1A5276; }
+  .role-badge.assistant_chief{ background:#F4ECF7; color:#6C3483; }
+  .role-badge.section_chief  { background:#FDFEFE; color:#922B21; border:1px solid #F5B7B1; }
+  .role-badge.admin          { background:#EAFAF1; color:#1E8449; }
+  .selected-badge {
+    display:inline-flex; align-items:center; gap:4px;
+    background:var(--red-light); color:var(--red-dark);
+    font-size:11px; font-weight:600;
+    padding:3px 8px 3px 10px; border-radius:20px;
+  }
+  .selected-badge button {
+    background:none; border:none; color:var(--red-dark);
+    cursor:pointer; font-size:13px; line-height:1; padding:0;
+  }
   .mail-history-item {
     padding:10px 0; border-bottom:1px solid var(--gray-100);
     font-size:13px;
@@ -646,6 +689,7 @@
     <div class="nav-tab" onclick="showPage('new')">新規申請</div>
     <div class="nav-tab" id="nav-approval" style="display:none" onclick="showPage('approval')">承認待ち</div>
     <div class="nav-tab" onclick="showPage('mail')">メール送信</div>
+    <div class="nav-tab" id="nav-admin" style="display:none" onclick="showPage('admin')">管理者</div>
   </nav>
 
   <div class="container">
@@ -776,16 +820,32 @@
     <!-- メール送信ページ -->
     <div id="page-mail" class="page">
       <div class="list-header">
-        <h2>メール送信</h2>
+        <h2>承認者へのメール送信</h2>
       </div>
       <div class="card">
-        <div class="card-title">送信先を選択</div>
-        <div class="form-row">
-          <label>送信先ユーザー<span class="required">*</span></label>
-          <div id="mail-user-list" style="border:1.5px solid var(--gray-300);border-radius:var(--radius);max-height:200px;overflow-y:auto;padding:4px;">
-            <div class="loading">読み込み中...</div>
-          </div>
+        <div class="card-title">送信先の承認者を選択<span class="tag">複数選択可</span></div>
+
+        <!-- 役職フィルター -->
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+          <button class="btn btn-secondary" style="padding:5px 14px;font-size:12px" onclick="filterApprovers('all', this)">すべて</button>
+          <button class="btn btn-secondary" style="padding:5px 14px;font-size:12px" onclick="filterApprovers('team_leader', this)">係長</button>
+          <button class="btn btn-secondary" style="padding:5px 14px;font-size:12px" onclick="filterApprovers('assistant_chief', this)">補佐</button>
+          <button class="btn btn-secondary" style="padding:5px 14px;font-size:12px" onclick="filterApprovers('section_chief', this)">課長</button>
+          <button class="btn btn-ghost" style="padding:5px 14px;font-size:12px;margin-left:auto" onclick="selectAllApprovers(true)">全選択</button>
+          <button class="btn btn-ghost" style="padding:5px 14px;font-size:12px" onclick="selectAllApprovers(false)">全解除</button>
         </div>
+
+        <!-- 承認者一覧（役職グループ別） -->
+        <div id="mail-user-list" style="border:1.5px solid var(--gray-300);border-radius:var(--radius);max-height:280px;overflow-y:auto;padding:4px;">
+          <div class="loading">読み込み中...</div>
+        </div>
+
+        <!-- 選択済みバッジ -->
+        <div id="mail-selected-badges" style="margin-top:10px;min-height:28px;display:flex;flex-wrap:wrap;gap:6px;"></div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <div class="card-title">メール内容</div>
         <div class="form-row">
           <label>件名<span class="required">*</span></label>
           <input type="text" id="mail-subject" placeholder="件名を入力">
@@ -801,14 +861,103 @@
           </select>
         </div>
         <div class="btn-row">
-          <div></div>
+          <div id="mail-count-label" style="font-size:13px;color:var(--gray-500)">送信先：0名</div>
           <button class="btn btn-primary" onclick="sendMail()">送信する</button>
         </div>
       </div>
+
       <!-- 送信履歴 -->
-      <div class="card" style="margin-top:16px">
+      <div class="card" style="margin-top:12px">
         <div class="card-title">送信履歴</div>
         <div id="mail-history"><div class="loading">読み込み中...</div></div>
+      </div>
+    </div>
+
+    <!-- 管理者ページ -->
+    <div id="page-admin" class="page">
+      <div class="list-header" style="margin-bottom:8px">
+        <h2>管理者画面</h2>
+      </div>
+
+      <!-- タブ -->
+      <div class="tab-bar" id="admin-tab-bar">
+        <div class="tab active" onclick="switchAdminTab('users', this)">ユーザー管理</div>
+        <div class="tab" onclick="switchAdminTab('roles', this)">役職承認</div>
+        <div class="tab" onclick="switchAdminTab('allapps', this)">全申請一覧</div>
+        <div class="tab" onclick="switchAdminTab('forms', this)">フォーム設定</div>
+      </div>
+
+      <!-- ユーザー管理 -->
+      <div id="admin-users" class="admin-section">
+        <div class="card">
+          <div class="card-title">登録ユーザー一覧</div>
+          <div id="admin-user-list"><div class="loading">読み込み中...</div></div>
+        </div>
+      </div>
+
+      <!-- 役職承認 -->
+      <div id="admin-roles" class="admin-section" style="display:none">
+        <div class="card">
+          <div class="card-title">役職変更リクエスト<span class="tag">管理者が承認・却下</span></div>
+          <div style="font-size:12px;color:var(--gray-500);margin-bottom:12px;line-height:1.6;">
+            係長・補佐・課長・管理者として登録されたユーザーが表示されます。役職を承認または変更してください。
+          </div>
+          <div id="admin-role-list"><div class="loading">読み込み中...</div></div>
+        </div>
+      </div>
+
+      <!-- 全申請一覧 -->
+      <div id="admin-allapps" class="admin-section" style="display:none">
+        <div class="card">
+          <div class="card-title">全ユーザーの申請一覧</div>
+          <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+            <input type="text" id="admin-search" placeholder="件名・申請者で検索" style="flex:1;min-width:160px" oninput="filterAdminApps()">
+            <select id="admin-status-filter" onchange="filterAdminApps()" style="width:120px">
+              <option value="">すべて</option>
+              <option value="pending">承認待ち</option>
+              <option value="approved">承認済み</option>
+              <option value="rejected">差し戻し</option>
+              <option value="draft">下書き</option>
+            </select>
+          </div>
+          <div id="admin-app-list"><div class="loading">読み込み中...</div></div>
+        </div>
+      </div>
+
+      <!-- フォーム設定 -->
+      <div id="admin-forms" class="admin-section" style="display:none">
+        <div class="card">
+          <div class="card-title">書類種別の管理</div>
+          <div style="font-size:12px;color:var(--gray-500);margin-bottom:14px;">
+            書類種別ごとの入力項目を追加・変更・削除できます。
+          </div>
+          <div class="form-row">
+            <label>編集する書類種別</label>
+            <select id="form-type-select" onchange="loadFormConfig()">
+              <option value="report">報告書・業務日誌</option>
+              <option value="leave">出張・休暇申請</option>
+              <option value="purchase">物品購入・経費申請</option>
+              <option value="verification">検証事業関連報告</option>
+            </select>
+          </div>
+          <div id="form-fields-editor"></div>
+          <div style="margin-top:12px;display:flex;gap:8px;">
+            <button class="btn btn-ghost" onclick="addFormField()">＋ 項目を追加</button>
+            <button class="btn btn-primary" onclick="saveFormConfig()">設定を保存</button>
+          </div>
+        </div>
+        <div class="card" style="margin-top:12px">
+          <div class="card-title">書類種別の追加</div>
+          <div class="form-row">
+            <label>種別キー（英数字）</label>
+            <input type="text" id="new-type-key" placeholder="例: inspection">
+          </div>
+          <div class="form-row">
+            <label>表示名</label>
+            <input type="text" id="new-type-label" placeholder="例: 点検報告書">
+          </div>
+          <button class="btn btn-primary" onclick="addFormType()">種別を追加</button>
+        </div>
       </div>
     </div>
 
@@ -888,6 +1037,10 @@ async function initApp(user) {
   // 承認者タブの表示
   if (['team_leader','section_chief','admin'].includes(profile.role)) {
     document.getElementById('nav-approval').style.display = 'block';
+  }
+  // 管理者タブの表示
+  if (profile.role === 'admin') {
+    document.getElementById('nav-admin').style.display = 'block';
   }
 
   document.getElementById('login-screen').style.display = 'none';
@@ -999,13 +1152,14 @@ function showPage(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
   document.getElementById('page-' + name).classList.add('active');
-  const tabs = { list: 0, new: 1, approval: 2, mail: 3 };
+  const tabs = { list: 0, new: 1, approval: 2, mail: 3, admin: 4 };
   document.querySelectorAll('.nav-tab')[tabs[name]]?.classList.add('active');
 
   if (name === 'list')     loadApplicationList();
   if (name === 'new')      resetForm();
   if (name === 'approval') loadApprovalList();
   if (name === 'mail')     loadMailPage();
+  if (name === 'admin')    loadAdminPage();
 }
 
 // =====================================================
@@ -1171,8 +1325,7 @@ function buildDynamicForm(type) {
       </div>`,
   };
 
-  document.getElementById('dynamic-form').innerHTML =
-    forms[type] || `<div class="form-row"><label>件名<span class="required">*</span></label><input type="text" id="f-title" value="${formData.title||''}"></div><div class="form-row"><label>内容<span class="required">*</span></label><textarea id="f-content">${formData.content||''}</textarea></div>`;
+  buildDynamicFormFromConfig(type);
 }
 
 function updatePurchaseRoute() {
@@ -1201,6 +1354,7 @@ function validateForm() {
 }
 
 function collectFormData() {
+  if (selectedType) { collectFormDataDynamic(); return; }
   formData = { title: document.getElementById('f-title')?.value.trim() };
   ['date','location','content','notes','leave_type','start','end','reason',
    'amount','items','purchase_date','case_no','result'].forEach(k => {
@@ -1349,6 +1503,7 @@ function renderList(items) {
       </div>
       <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;">
         ${a.status === 'draft' ? `<button class="btn btn-ghost" style="padding:5px 12px;font-size:12px" onclick="editDraft('${a.id}')">編集</button>` : ''}
+        <button class="btn btn-secondary" style="padding:5px 12px;font-size:12px" onclick="duplicateApp('${a.id}')">複製</button>
         <button class="btn btn-secondary" style="padding:5px 12px;font-size:12px" onclick="exportPDF('${a.id}')">PDF</button>
         <div class="status-label ${a.status}" style="min-width:56px;text-align:right">${STATUS_LABEL[a.status] || a.status}</div>
       </div>
@@ -1448,32 +1603,59 @@ async function editDraft(id) {
 
   // フォームにデータを復元
   selectedType = data.type;
-  formData = data.content || {};
-  formData.title = data.title;
+  formData = { ...(data.content || {}), title: data.title };
   if (data.amount) formData.amount = data.amount;
-
-  // 編集中のIDを保持
   window._editingDraftId = id;
 
   showPage('new');
 
-  // 書類種別ボタンを選択状態に
+  // 書類種別選択 → そのままステップ2（入力画面）へ自動遷移
   setTimeout(() => {
     document.querySelectorAll('.type-btn').forEach(btn => {
-      const typeMap = { report:'report', leave:'leave', purchase:'purchase', verification:'verification', other:'other' };
       const btnType = btn.getAttribute('onclick')?.match(/'(\w+)'/)?.[1];
       if (btnType === selectedType) {
         btn.classList.add('selected');
         const info = document.getElementById('route-info');
-        info.innerHTML = ROUTE_DESCRIPTIONS[selectedType];
-        info.classList.add('visible');
+        if (info && ROUTE_DESCRIPTIONS[selectedType]) {
+          info.innerHTML = ROUTE_DESCRIPTIONS[selectedType];
+          info.classList.add('visible');
+        }
         document.getElementById('btn-next1').disabled = false;
       }
     });
-  }, 50);
+    // ステップ2の入力画面を直接表示
+    buildDynamicForm(selectedType);
+    document.getElementById('step1-view').style.display = 'none';
+    document.getElementById('step2-view').style.display = '';
+    // 保存ボタンのラベルを「更新」に変更
+    const draftBtn = document.querySelector('[onclick="saveDraft()"]');
+    if (draftBtn) draftBtn.textContent = '変更を保存';
+  }, 80);
 }
 
 // submitApplicationの下書き更新対応（既存関数に追加処理）
+// =====================================================
+// 申請複製
+// =====================================================
+async function duplicateApp(id) {
+  const { data, error } = await sb.from('applications').select('*').eq('id', id).single();
+  if (error || !data) { showToast('複製に失敗しました', 'error'); return; }
+
+  const { error: insertErr } = await sb.from('applications').insert({
+    type:         data.type,
+    title:        data.title + '（複製）',
+    content:      data.content,
+    amount:       data.amount || 0,
+    applicant_id: currentUser.id,
+    status:       'draft',
+    current_step: 1,
+    total_steps:  data.total_steps || 1,
+  });
+  if (insertErr) { showToast('複製に失敗しました：' + insertErr.message, 'error'); return; }
+  showToast('下書きとして複製しました', 'success');
+  loadApplicationList();
+}
+
 async function updateDraft(id) {
   collectFormData();
   const { error } = await sb.from('applications').update({
@@ -1603,38 +1785,142 @@ async function exportPDF(id) {
 // メール送信ページ
 // =====================================================
 let selectedMailUsers = new Set();
+let allApproverUsers  = [];
+
+const ROLE_LABEL = {
+  team_leader:     '係長',
+  assistant_chief: '補佐',
+  section_chief:   '課長',
+  admin:           '管理者',
+};
+const APPROVER_ROLES = ['team_leader', 'assistant_chief', 'section_chief', 'admin'];
 
 async function loadMailPage() {
   selectedMailUsers = new Set();
 
-  // ユーザー一覧読み込み
-  const { data: users } = await sb.from('users').select('*').eq('is_active', true).neq('id', currentUser.id);
-  const userList = document.getElementById('mail-user-list');
-  if (!users?.length) {
-    userList.innerHTML = '<div style="padding:12px;font-size:13px;color:var(--gray-500)">他のユーザーがいません</div>';
-  } else {
-    userList.innerHTML = users.map(u => `
-      <label class="mail-user-item">
-        <input type="checkbox" value="${u.id}" data-email="${u.email}" onchange="toggleMailUser('${u.id}')">
-        <div class="user-info">
-          <div class="user-name">${u.name}</div>
-          <div class="user-meta">${u.department} ・ ${u.role} ・ ${u.email}</div>
-        </div>
-      </label>`).join('');
-  }
+  // 承認者ロールのユーザーのみ取得
+  const { data: users } = await sb.from('users')
+    .select('*')
+    .eq('is_active', true)
+    .neq('id', currentUser.id)
+    .in('role', APPROVER_ROLES)
+    .order('role')
+    .order('department');
+
+  allApproverUsers = users || [];
+  renderApproverList(allApproverUsers);
+  updateSelectedBadges();
 
   // 申請一覧をセレクトに反映
   const appSel = document.getElementById('mail-application');
   appSel.innerHTML = '<option value="">選択しない</option>' +
     (allApplications || []).map(a => `<option value="${a.id}">${a.title}</option>`).join('');
 
-  // 送信履歴読み込み
   loadMailHistory();
 }
 
-function toggleMailUser(uid) {
-  if (selectedMailUsers.has(uid)) selectedMailUsers.delete(uid);
-  else selectedMailUsers.add(uid);
+function renderApproverList(users) {
+  const userList = document.getElementById('mail-user-list');
+  if (!users?.length) {
+    userList.innerHTML = '<div style="padding:12px;font-size:13px;color:var(--gray-500)">承認者が登録されていません</div>';
+    return;
+  }
+
+  // 役職でグループ化
+  const groups = {};
+  users.forEach(u => {
+    const r = u.role;
+    if (!groups[r]) groups[r] = [];
+    groups[r].push(u);
+  });
+
+  let html = '';
+  APPROVER_ROLES.forEach(role => {
+    if (!groups[role]?.length) return;
+    html += `<div class="role-group-header">
+      <span class="role-badge ${role}">${ROLE_LABEL[role] || role}</span>
+      ${groups[role].length}名
+    </div>`;
+    groups[role].forEach(u => {
+      const checked = selectedMailUsers.has(u.id);
+      html += `
+        <label class="mail-user-item${checked ? ' checked' : ''}" id="item-${u.id}">
+          <input type="checkbox" value="${u.id}" ${checked ? 'checked' : ''}
+            onchange="toggleMailUser('${u.id}', '${u.name}', this)">
+          <div class="user-info">
+            <div class="user-name">${u.name}</div>
+            <div class="user-meta">${u.department} ・ ${u.email}</div>
+          </div>
+        </label>`;
+    });
+  });
+  userList.innerHTML = html;
+}
+
+function filterApprovers(role, btn) {
+  document.querySelectorAll('.list-header + .card .btn-secondary, .list-header + .card .btn-ghost').forEach(b => {
+    if (['すべて','係長','補佐','課長'].includes(b.textContent.trim())) {
+      b.className = 'btn btn-secondary';
+      b.style.cssText = 'padding:5px 14px;font-size:12px';
+    }
+  });
+  btn.className = 'btn btn-primary';
+  btn.style.cssText = 'padding:5px 14px;font-size:12px';
+
+  const filtered = role === 'all'
+    ? allApproverUsers
+    : allApproverUsers.filter(u => u.role === role);
+  renderApproverList(filtered);
+}
+
+function selectAllApprovers(select) {
+  allApproverUsers.forEach(u => {
+    if (select) selectedMailUsers.add(u.id);
+    else selectedMailUsers.delete(u.id);
+  });
+  renderApproverList(allApproverUsers);
+  updateSelectedBadges();
+}
+
+function toggleMailUser(uid, name, cb) {
+  const item = document.getElementById('item-' + uid);
+  if (cb.checked) {
+    selectedMailUsers.add(uid);
+    item?.classList.add('checked');
+  } else {
+    selectedMailUsers.delete(uid);
+    item?.classList.remove('checked');
+  }
+  updateSelectedBadges();
+}
+
+function updateSelectedBadges() {
+  const container = document.getElementById('mail-selected-badges');
+  const countEl   = document.getElementById('mail-count-label');
+  if (!container) return;
+
+  if (!selectedMailUsers.size) {
+    container.innerHTML = '';
+    if (countEl) countEl.textContent = '送信先：0名';
+    return;
+  }
+  const badges = [...selectedMailUsers].map(uid => {
+    const u = allApproverUsers.find(x => x.id === uid);
+    if (!u) return '';
+    return `<span class="selected-badge">
+      ${u.name}
+      <button onclick="removeMailUser('${uid}')" title="解除">×</button>
+    </span>`;
+  }).join('');
+  container.innerHTML = badges;
+  if (countEl) countEl.textContent = `送信先：${selectedMailUsers.size}名`;
+}
+
+function removeMailUser(uid) {
+  selectedMailUsers.delete(uid);
+  const cb = document.querySelector(`#mail-user-list input[value="${uid}"]`);
+  if (cb) { cb.checked = false; document.getElementById('item-' + uid)?.classList.remove('checked'); }
+  updateSelectedBadges();
 }
 
 async function sendMail() {
@@ -1687,6 +1973,284 @@ async function loadMailHistory() {
       <div class="mh-subject">${m.message?.slice(0, 60) || '(内容なし)'}</div>
       <div class="mh-meta">${formatDate(m.created_at)}</div>
     </div>`).join('');
+}
+
+// =====================================================
+// フォームカスタマイズ設定（localStorageで管理）
+// =====================================================
+const DEFAULT_FORM_FIELDS = {
+  report: [
+    { id:'title',    label:'件名',       type:'text',     required:true,  placeholder:'例：令和6年度 第1回検証事業 活動報告' },
+    { id:'date',     label:'報告日',     type:'date',     required:true,  placeholder:'' },
+    { id:'location', label:'活動場所',   type:'text',     required:false, placeholder:'例：○○病院' },
+    { id:'content',  label:'活動内容',   type:'textarea', required:true,  placeholder:'活動の概要・経過を記入' },
+    { id:'notes',    label:'特記事項',   type:'textarea', required:false, placeholder:'気になった点・申し送りなど' },
+  ],
+  leave: [
+    { id:'title',      label:'件名',     type:'text',     required:true,  placeholder:'例：年次有給休暇 取得申請' },
+    { id:'leave_type', label:'申請種別', type:'select',   required:true,  placeholder:'年次有給,特別休暇,出張,代休,その他' },
+    { id:'start',      label:'開始日',   type:'date',     required:true,  placeholder:'' },
+    { id:'end',        label:'終了日',   type:'date',     required:true,  placeholder:'' },
+    { id:'reason',     label:'理由・目的', type:'textarea', required:false, placeholder:'出張の場合は目的地・用件を記入' },
+  ],
+  purchase: [
+    { id:'title',         label:'件名',       type:'text',     required:true,  placeholder:'例：検証事業用 消耗品購入申請' },
+    { id:'amount',        label:'申請金額（円）', type:'number', required:true,  placeholder:'0' },
+    { id:'purchase_date', label:'購入希望日', type:'date',     required:false, placeholder:'' },
+    { id:'items',         label:'購入品目・数量', type:'textarea', required:true, placeholder:'品名・数量・単価を記入' },
+    { id:'reason',        label:'購入理由・用途', type:'textarea', required:false, placeholder:'なぜ購入が必要か' },
+  ],
+  verification: [
+    { id:'title',   label:'件名',         type:'text',     required:true,  placeholder:'例：令和6年度 検証症例報告 第5号' },
+    { id:'date',    label:'報告日',       type:'date',     required:true,  placeholder:'' },
+    { id:'case_no', label:'症例番号',     type:'text',     required:false, placeholder:'例：R6-005' },
+    { id:'content', label:'検証内容・経緯', type:'textarea', required:true, placeholder:'検証の背景・実施内容を記入' },
+    { id:'result',  label:'結果・考察',   type:'textarea', required:false, placeholder:'検証結果・今後の課題' },
+  ],
+};
+
+let customFormTypes  = JSON.parse(localStorage.getItem('custom_form_types')  || '{}');
+let customFormFields = JSON.parse(localStorage.getItem('custom_form_fields') || '{}');
+
+function getFormFields(type) {
+  return customFormFields[type] || DEFAULT_FORM_FIELDS[type] || [
+    { id:'title',   label:'件名',   type:'text',     required:true,  placeholder:'' },
+    { id:'content', label:'内容',   type:'textarea', required:false, placeholder:'' },
+  ];
+}
+
+function getAllTypeLabels() {
+  return { ...TYPE_LABELS, ...customFormTypes };
+}
+
+// buildDynamicFormをフィールド設定から動的生成に置き換え
+function buildDynamicFormFromConfig(type) {
+  document.getElementById('form-type-label').textContent = (getAllTypeLabels()[type] || type) + ' の入力';
+  document.getElementById('form-type-tag').textContent = getAllTypeLabels()[type] || type;
+
+  const fields = getFormFields(type);
+  let html = '';
+  fields.forEach(f => {
+    const fid = 'f-' + f.id.replace(/_/g, '-');
+    const val = formData[f.id] || '';
+    const req = f.required ? '<span class="required">*</span>' : '';
+    if (f.type === 'textarea') {
+      html += `<div class="form-row"><label>${f.label}${req}</label>
+        <textarea id="${fid}" placeholder="${f.placeholder||''}">${val}</textarea></div>`;
+    } else if (f.type === 'select') {
+      const opts = (f.placeholder || '').split(',').map(o => o.trim()).filter(Boolean);
+      const optHtml = opts.map(o => `<option value="${o}" ${val===o?'selected':''}>${o}</option>`).join('');
+      html += `<div class="form-row"><label>${f.label}${req}</label>
+        <select id="${fid}"><option value="">選択してください</option>${optHtml}</select></div>`;
+    } else if (f.type === 'number') {
+      html += `<div class="form-row"><label>${f.label}${req}</label>
+        <div class="amount-wrap"><input type="number" id="${fid}" placeholder="${f.placeholder||'0'}" min="0" value="${val}" oninput="updatePurchaseRoute()"></div></div>`;
+    } else {
+      html += `<div class="form-row"><label>${f.label}${req}</label>
+        <input type="${f.type||'text'}" id="${fid}" placeholder="${f.placeholder||''}" value="${val}"></div>`;
+    }
+  });
+  document.getElementById('dynamic-form').innerHTML = html || '<p style="color:var(--gray-500);font-size:13px">項目が設定されていません</p>';
+}
+
+// collectFormDataもフィールド設定から動的に収集
+function collectFormDataDynamic() {
+  const fields = getFormFields(selectedType);
+  formData = {};
+  fields.forEach(f => {
+    const el = document.getElementById('f-' + f.id.replace(/_/g, '-'));
+    if (el) formData[f.id] = el.value;
+  });
+}
+
+// =====================================================
+// 管理者ページ
+// =====================================================
+let adminAllApps = [];
+
+async function loadAdminPage() {
+  switchAdminTab('users', document.querySelector('#admin-tab-bar .tab'));
+}
+
+function switchAdminTab(tab, btn) {
+  document.querySelectorAll('.admin-section').forEach(s => s.style.display = 'none');
+  document.querySelectorAll('#admin-tab-bar .tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('admin-' + tab).style.display = '';
+  btn?.classList.add('active');
+
+  if (tab === 'users')   loadAdminUsers();
+  if (tab === 'roles')   loadAdminRoles();
+  if (tab === 'allapps') loadAdminAllApps();
+  if (tab === 'forms')   loadFormConfig();
+}
+
+// --- ユーザー管理 ---
+async function loadAdminUsers() {
+  const { data: users } = await sb.from('users').select('*').order('role').order('name');
+  const el = document.getElementById('admin-user-list');
+  if (!users?.length) { el.innerHTML = '<div class="loading">ユーザーがいません</div>'; return; }
+
+  const ROLES = ['staff','team_leader','assistant_chief','section_chief','admin'];
+  const ROLE_NAMES = { staff:'一般職員', team_leader:'係長', assistant_chief:'補佐', section_chief:'課長', admin:'管理者' };
+
+  el.innerHTML = users.map(u => `
+    <div class="admin-user-row">
+      <div>
+        <div class="name">${u.name}</div>
+        <div class="meta">${u.department} ・ ${u.email}</div>
+      </div>
+      <select onchange="updateUserRole('${u.id}', this.value)" style="width:110px">
+        ${ROLES.map(r => `<option value="${r}" ${u.role===r?'selected':''}>${ROLE_NAMES[r]}</option>`).join('')}
+      </select>
+      <button class="btn btn-secondary" style="padding:4px 10px;font-size:11px"
+        onclick="toggleUserActive('${u.id}', ${u.is_active})">
+        ${u.is_active ? '無効化' : '有効化'}
+      </button>
+    </div>`).join('');
+}
+
+async function updateUserRole(uid, role) {
+  const { error } = await sb.from('users').update({ role }).eq('id', uid);
+  if (error) { showToast('更新に失敗しました', 'error'); return; }
+  showToast('役職を更新しました', 'success');
+}
+
+async function toggleUserActive(uid, current) {
+  const { error } = await sb.from('users').update({ is_active: !current }).eq('id', uid);
+  if (error) { showToast('更新に失敗しました', 'error'); return; }
+  showToast(current ? 'ユーザーを無効化しました' : 'ユーザーを有効化しました', 'success');
+  loadAdminUsers();
+}
+
+// --- 役職承認 ---
+async function loadAdminRoles() {
+  const { data: users } = await sb.from('users').select('*')
+    .in('role', ['team_leader','assistant_chief','section_chief','admin'])
+    .order('created_at', { ascending: false });
+  const el = document.getElementById('admin-role-list');
+  if (!users?.length) { el.innerHTML = '<div class="loading">承認待ちの役職変更はありません</div>'; return; }
+
+  const ROLE_NAMES = { staff:'一般職員', team_leader:'係長', assistant_chief:'補佐', section_chief:'課長', admin:'管理者' };
+  const ROLES = ['staff','team_leader','assistant_chief','section_chief','admin'];
+
+  el.innerHTML = users.map(u => `
+    <div class="admin-user-row">
+      <div>
+        <div class="name">${u.name}</div>
+        <div class="meta">${u.department} ・ ${u.email} ・ 登録日：${formatDate(u.created_at)}</div>
+      </div>
+      <span class="role-badge ${u.role}" style="padding:4px 10px;font-size:12px">${ROLE_NAMES[u.role]||u.role}</span>
+      <select onchange="updateUserRole('${u.id}', this.value)" style="width:110px">
+        ${ROLES.map(r => `<option value="${r}" ${u.role===r?'selected':''}>${ROLE_NAMES[r]}</option>`).join('')}
+      </select>
+      <button class="btn btn-primary" style="padding:4px 12px;font-size:11px"
+        onclick="updateUserRole('${u.id}', document.querySelector('[onchange*=\'${u.id}\']').value); showToast('承認しました','success')">
+        承認
+      </button>
+    </div>`).join('');
+}
+
+// --- 全申請一覧 ---
+async function loadAdminAllApps() {
+  const { data } = await sb.from('applications')
+    .select('*, users!applicant_id(name, department)')
+    .order('created_at', { ascending: false });
+  adminAllApps = data || [];
+  renderAdminApps(adminAllApps);
+}
+
+function filterAdminApps() {
+  const q      = document.getElementById('admin-search')?.value.toLowerCase() || '';
+  const status = document.getElementById('admin-status-filter')?.value || '';
+  const filtered = adminAllApps.filter(a => {
+    const matchQ = !q || a.title?.toLowerCase().includes(q) || a.users?.name?.toLowerCase().includes(q);
+    const matchS = !status || a.status === status;
+    return matchQ && matchS;
+  });
+  renderAdminApps(filtered);
+}
+
+function renderAdminApps(items) {
+  const el = document.getElementById('admin-app-list');
+  if (!items.length) { el.innerHTML = '<div class="loading">申請がありません</div>'; return; }
+  el.innerHTML = items.map(a => `
+    <div class="app-item">
+      <div class="status-dot ${a.status}"></div>
+      <div class="info">
+        <div class="title">${a.title}</div>
+        <div class="meta">${a.users?.name}（${a.users?.department}）・ ${TYPE_LABELS[a.type]||a.type} ・ ${formatDate(a.created_at)}</div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
+        <button class="btn btn-secondary" style="padding:5px 10px;font-size:11px" onclick="duplicateApp('${a.id}')">複製</button>
+        <button class="btn btn-secondary" style="padding:5px 10px;font-size:11px" onclick="exportPDF('${a.id}')">PDF</button>
+        <div class="status-label ${a.status}">${STATUS_LABEL[a.status]||a.status}</div>
+      </div>
+    </div>`).join('');
+}
+
+// --- フォーム設定 ---
+let editingFields = [];
+
+function loadFormConfig() {
+  const type = document.getElementById('form-type-select')?.value || 'report';
+  editingFields = JSON.parse(JSON.stringify(getFormFields(type)));
+  renderFieldEditor();
+}
+
+function renderFieldEditor() {
+  const el = document.getElementById('form-fields-editor');
+  if (!el) return;
+  el.innerHTML = editingFields.map((f, i) => `
+    <div class="field-editor-row">
+      <span class="drag-handle">⠿</span>
+      <input type="text" value="${f.label}" placeholder="ラベル名" onchange="editingFields[${i}].label=this.value" style="flex:1.2">
+      <select onchange="editingFields[${i}].type=this.value" style="width:100px">
+        ${['text','textarea','date','number','select'].map(t =>
+          `<option value="${t}" ${f.type===t?'selected':''}>${t}</option>`).join('')}
+      </select>
+      <input type="text" value="${f.placeholder||''}" placeholder="ヒント文・選択肢(カンマ区切り)" onchange="editingFields[${i}].placeholder=this.value" style="flex:2">
+      <label style="font-size:11px;white-space:nowrap;display:flex;align-items:center;gap:4px">
+        <input type="checkbox" ${f.required?'checked':''} onchange="editingFields[${i}].required=this.checked"> 必須
+      </label>
+      <button class="btn btn-secondary btn-del" onclick="removeField(${i})">削除</button>
+    </div>`).join('');
+}
+
+function addFormField() {
+  editingFields.push({ id:'field_'+Date.now(), label:'新しい項目', type:'text', required:false, placeholder:'' });
+  renderFieldEditor();
+}
+
+function removeField(i) {
+  editingFields.splice(i, 1);
+  renderFieldEditor();
+}
+
+function saveFormConfig() {
+  const type = document.getElementById('form-type-select')?.value || 'report';
+  customFormFields[type] = editingFields;
+  localStorage.setItem('custom_form_fields', JSON.stringify(customFormFields));
+  showToast('フォーム設定を保存しました', 'success');
+}
+
+function addFormType() {
+  const key   = document.getElementById('new-type-key')?.value.trim();
+  const label = document.getElementById('new-type-label')?.value.trim();
+  if (!key || !label) { showToast('キーと表示名を入力してください', 'error'); return; }
+  if (!/^[a-z_]+$/.test(key)) { showToast('キーは英小文字とアンダースコアのみ使用できます', 'error'); return; }
+  customFormTypes[key] = label;
+  localStorage.setItem('custom_form_types', JSON.stringify(customFormTypes));
+  // 書類種別ボタンに動的追加
+  TYPE_LABELS[key] = label;
+  ROUTE_DESCRIPTIONS[key] = '承認経路：<strong>係長承認</strong>（1段階）';
+  showToast(`「${label}」を追加しました`, 'success');
+  document.getElementById('new-type-key').value = '';
+  document.getElementById('new-type-label').value = '';
+  // form-type-selectに追加
+  const sel = document.getElementById('form-type-select');
+  if (sel && !sel.querySelector(`option[value="${key}"]`)) {
+    sel.innerHTML += `<option value="${key}">${label}</option>`;
+  }
 }
 
 function showToast(msg, type = '') {
