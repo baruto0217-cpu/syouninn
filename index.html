@@ -542,15 +542,67 @@
       </div>
     </div>
 
-    <div class="form-row">
-      <label>メールアドレス</label>
-      <input type="text" id="login-email" placeholder="example@city.lg.jp" autocomplete="email">
+    <!-- ログイン／新規登録タブ -->
+    <div style="display:flex;border-bottom:1.5px solid var(--gray-300);margin-bottom:20px;">
+      <div id="tab-login" onclick="switchAuthTab('login')"
+        style="flex:1;text-align:center;padding:9px 0;font-size:13px;font-weight:700;cursor:pointer;
+               color:var(--red);border-bottom:2px solid var(--red);margin-bottom:-1.5px;">
+        ログイン
+      </div>
+      <div id="tab-register" onclick="switchAuthTab('register')"
+        style="flex:1;text-align:center;padding:9px 0;font-size:13px;font-weight:700;cursor:pointer;
+               color:var(--gray-500);border-bottom:2px solid transparent;margin-bottom:-1.5px;">
+        新規登録
+      </div>
     </div>
-    <div class="form-row">
-      <label>パスワード</label>
-      <input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password">
+
+    <!-- ログインフォーム -->
+    <div id="form-login">
+      <div class="form-row">
+        <label>メールアドレス</label>
+        <input type="text" id="login-email" placeholder="example@city.lg.jp" autocomplete="email">
+      </div>
+      <div class="form-row">
+        <label>パスワード</label>
+        <input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password">
+      </div>
+      <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="login()">ログイン</button>
     </div>
-    <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="login()">ログイン</button>
+
+    <!-- 新規登録フォーム -->
+    <div id="form-register" style="display:none">
+      <div class="form-row">
+        <label>氏名<span class="required">*</span></label>
+        <input type="text" id="reg-name" placeholder="山田 太郎">
+      </div>
+      <div class="form-row">
+        <label>メールアドレス<span class="required">*</span></label>
+        <input type="text" id="reg-email" placeholder="example@city.lg.jp" autocomplete="email">
+      </div>
+      <div class="form-row">
+        <label>パスワード<span class="required">*</span></label>
+        <input type="password" id="reg-password" placeholder="8文字以上" autocomplete="new-password">
+      </div>
+      <div class="form-row">
+        <label>所属<span class="required">*</span></label>
+        <input type="text" id="reg-department" placeholder="例：第一救急隊">
+      </div>
+      <div class="form-row">
+        <label>役職<span class="required">*</span></label>
+        <select id="reg-role">
+          <option value="">選択してください</option>
+          <option value="staff">一般職員（staff）</option>
+          <option value="team_leader">係長（team_leader）</option>
+          <option value="section_chief">課長（section_chief）</option>
+          <option value="admin">管理者（admin）</option>
+        </select>
+      </div>
+      <div style="font-size:11px;color:var(--gray-500);margin-bottom:12px;line-height:1.6;background:var(--gray-100);padding:8px 10px;border-radius:var(--radius);">
+        ⚠ 係長・課長・管理者の登録は管理者の承認後に有効になります。
+      </div>
+      <button class="btn btn-primary" style="width:100%;margin-top:4px" onclick="register()">アカウントを作成</button>
+    </div>
+
   </div>
 </div>
 
@@ -799,6 +851,73 @@ async function login() {
 async function logout() {
   await sb.auth.signOut();
   location.reload();
+}
+
+// =====================================================
+// タブ切り替え
+// =====================================================
+function switchAuthTab(tab) {
+  const isLogin = tab === 'login';
+  document.getElementById('form-login').style.display    = isLogin ? '' : 'none';
+  document.getElementById('form-register').style.display = isLogin ? 'none' : '';
+
+  const tLogin = document.getElementById('tab-login');
+  const tReg   = document.getElementById('tab-register');
+  tLogin.style.color       = isLogin ? 'var(--red)'      : 'var(--gray-500)';
+  tLogin.style.borderBottom = isLogin ? '2px solid var(--red)' : '2px solid transparent';
+  tReg.style.color         = isLogin ? 'var(--gray-500)' : 'var(--red)';
+  tReg.style.borderBottom  = isLogin ? '2px solid transparent' : '2px solid var(--red)';
+}
+
+// =====================================================
+// 新規登録
+// =====================================================
+async function register() {
+  const name       = document.getElementById('reg-name').value.trim();
+  const email      = document.getElementById('reg-email').value.trim();
+  const password   = document.getElementById('reg-password').value;
+  const department = document.getElementById('reg-department').value.trim();
+  const role       = document.getElementById('reg-role').value;
+
+  if (!name || !email || !password || !department || !role) {
+    showToast('すべての項目を入力してください', 'error'); return;
+  }
+  if (password.length < 8) {
+    showToast('パスワードは8文字以上で入力してください', 'error'); return;
+  }
+
+  // Supabase接続確認・初期化
+  const url = document.getElementById('cfg-url').value.trim();
+  const key = document.getElementById('cfg-key').value.trim();
+  if (!url || !key) { showToast('Project URLとAnon Keyを入力してください', 'error'); return; }
+  initSupabase(url, key);
+
+  // 1. Authにユーザー作成
+  const { data: authData, error: authError } = await sb.auth.signUp({ email, password });
+  if (authError) { showToast('登録エラー：' + authError.message, 'error'); return; }
+
+  const userId = authData.user?.id;
+  if (!userId) { showToast('ユーザーIDの取得に失敗しました', 'error'); return; }
+
+  // 2. usersテーブルにプロフィール登録
+  const { error: profileError } = await sb.from('users').insert({
+    id:         userId,
+    email:      email,
+    name:       name,
+    department: department,
+    role:       role,
+  });
+
+  if (profileError) {
+    showToast('プロフィール登録エラー：' + profileError.message, 'error'); return;
+  }
+
+  // 成功
+  localStorage.setItem('sb_url', url);
+  localStorage.setItem('sb_key', key);
+  showToast('登録が完了しました！ログインしてください', 'success');
+  switchAuthTab('login');
+  document.getElementById('login-email').value = email;
 }
 
 // =====================================================
