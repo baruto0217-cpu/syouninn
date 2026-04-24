@@ -808,13 +808,25 @@ window.addEventListener('DOMContentLoaded', async () => {
 
 async function initApp(user) {
   currentUser = user;
-  const { data: profile } = await sb.from('users').select('*').eq('id', user.id).single();
+
+  // maybeSingle()：レコード0件でも406エラーにならない
+  const { data: profile } = await sb
+    .from('users').select('*').eq('id', user.id).maybeSingle();
+
   currentUserProfile = profile;
+
+  // プロフィール未登録の場合はログイン画面に戻す
+  if (!profile) {
+    showToast('プロフィールが未登録です。新規登録から登録してください', 'error');
+    await sb.auth.signOut();
+    return;
+  }
+
   document.getElementById('user-name-badge').textContent =
-    profile ? `${profile.name}（${profile.department}）` : user.email;
+    `${profile.name}（${profile.department}）`;
 
   // 承認者タブの表示
-  if (profile && ['team_leader','section_chief','admin'].includes(profile.role)) {
+  if (['team_leader','section_chief','admin'].includes(profile.role)) {
     document.getElementById('nav-approval').style.display = 'block';
   }
 
@@ -1178,6 +1190,11 @@ function getApprovalSteps(type, amount) {
 // 申請提出
 // =====================================================
 async function submitApplication() {
+  // ユーザー・プロフィール未ロードの場合はガード
+  if (!currentUser || !currentUserProfile) {
+    showToast('ログイン情報が取得できません。再ログインしてください', 'error'); return;
+  }
+
   const btn = document.getElementById('btn-submit');
   btn.disabled = true;
   btn.textContent = '送信中...';
@@ -1186,17 +1203,17 @@ async function submitApplication() {
   const steps = getApprovalSteps(selectedType, amount);
 
   const payload = {
-    type:        selectedType,
-    title:       formData.title,
-    content:     formData,
-    amount:      amount,
+    type:         selectedType,
+    title:        formData.title,
+    content:      formData,
+    amount:       amount,
     applicant_id: currentUser.id,
-    status:      'pending',
+    status:       'pending',
     current_step: 1,
-    total_steps: steps.length,
+    total_steps:  steps.length,
   };
 
-  const { data, error } = await sb.from('applications').insert(payload).select().single();
+  const { data, error } = await sb.from('applications').insert(payload).select().maybeSingle();
 
   if (error) {
     showToast('送信に失敗しました：' + error.message, 'error');
