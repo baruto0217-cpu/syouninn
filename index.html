@@ -2289,9 +2289,12 @@ async function confirmDeleteApp(id, isAdmin) {
 }
 
 async function deleteApp(id, isAdmin) {
-  // 関連する approvals・notifications も削除
-  await sb.from('approvals').delete().eq('application_id', id);
-  await sb.from('notifications').delete().eq('application_id', id);
+  // 関連テーブルを先にすべて削除（外部キー制約対策）
+  const relatedTables = ['approvals', 'attachments', 'notifications'];
+  for (const table of relatedTables) {
+    const { error: relErr } = await sb.from(table).delete().eq('application_id', id);
+    if (relErr) console.warn(`${table} 削除エラー（無視）:`, relErr.message);
+  }
   const { error } = await sb.from('applications').delete().eq('id', id);
   if (error) {
     showToast('削除に失敗しました：' + error.message, 'error');
