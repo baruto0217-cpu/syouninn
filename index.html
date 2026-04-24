@@ -522,6 +522,26 @@
     </div>
     <h1>電子決裁システム</h1>
     <p>救急救命士 検証事業</p>
+
+    <!-- Supabase接続設定（初回のみ） -->
+    <div id="supabase-config-section" style="margin-bottom:18px;text-align:left;">
+      <div style="font-size:11px;font-weight:700;color:var(--gray-500);letter-spacing:0.05em;margin-bottom:8px;">
+        ▼ Supabase接続設定（初回のみ入力）
+      </div>
+      <div class="form-row" style="margin-bottom:8px">
+        <label style="font-size:11px">Project URL</label>
+        <input type="text" id="cfg-url" placeholder="https://xxxxxx.supabase.co" style="font-size:12px;padding:7px 10px">
+      </div>
+      <div class="form-row" style="margin-bottom:4px">
+        <label style="font-size:11px">Anon Key</label>
+        <input type="text" id="cfg-key" placeholder="eyJ..." style="font-size:12px;padding:7px 10px">
+      </div>
+      <div style="font-size:10px;color:var(--gray-500);margin-top:4px;line-height:1.5;">
+        SupabaseダッシュボードのSettings → API から確認できます。<br>
+        入力するとブラウザに保存されます（次回は不要）。
+      </div>
+    </div>
+
     <div class="form-row">
       <label>メールアドレス</label>
       <input type="text" id="login-email" placeholder="example@city.lg.jp" autocomplete="email">
@@ -696,13 +716,14 @@
 
 <script>
 // =====================================================
-// Supabase 設定（ここを書き換えてください）
+// Supabase 初期化（localStorageから読み込み）
 // =====================================================
-const SUPABASE_URL = 'https://xxxxxxxxxxxxxxxx.supabase.co'; // ← あなたのURL
-const SUPABASE_ANON_KEY = 'eyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'; // ← あなたのanon key
-
 const { createClient } = supabase;
-const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+let sb = null;
+
+function initSupabase(url, key) {
+  sb = createClient(url, key);
+}
 
 // =====================================================
 // 状態管理
@@ -714,12 +735,22 @@ let formData = {};
 let allApplications = [];
 
 // =====================================================
-// 初期化
+// 初期化（ページ読み込み時）
 // =====================================================
 window.addEventListener('DOMContentLoaded', async () => {
-  const { data: { session } } = await sb.auth.getSession();
-  if (session) {
-    await initApp(session.user);
+  // 保存済みの設定を読み込んでフォームに表示
+  const savedUrl = localStorage.getItem('sb_url') || '';
+  const savedKey = localStorage.getItem('sb_key') || '';
+  if (savedUrl) document.getElementById('cfg-url').value = savedUrl;
+  if (savedKey) document.getElementById('cfg-key').value = savedKey;
+
+  // 設定済みならセッション確認
+  if (savedUrl && savedKey) {
+    initSupabase(savedUrl, savedKey);
+    try {
+      const { data: { session } } = await sb.auth.getSession();
+      if (session) await initApp(session.user);
+    } catch(e) { /* 接続失敗時は何もしない */ }
   }
 });
 
@@ -744,12 +775,24 @@ async function initApp(user) {
 // 認証
 // =====================================================
 async function login() {
+  const url = document.getElementById('cfg-url').value.trim();
+  const key = document.getElementById('cfg-key').value.trim();
   const email = document.getElementById('login-email').value.trim();
   const password = document.getElementById('login-password').value;
+
+  if (!url || !key) { showToast('Project URLとAnon Keyを入力してください', 'error'); return; }
   if (!email || !password) { showToast('メールアドレスとパスワードを入力してください', 'error'); return; }
+
+  // Supabase初期化
+  initSupabase(url, key);
 
   const { data, error } = await sb.auth.signInWithPassword({ email, password });
   if (error) { showToast('ログインに失敗しました：' + error.message, 'error'); return; }
+
+  // 成功したら設定を保存
+  localStorage.setItem('sb_url', url);
+  localStorage.setItem('sb_key', key);
+
   await initApp(data.user);
 }
 
