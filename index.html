@@ -823,23 +823,33 @@
           <div class="type-grid">
             <button class="type-btn" onclick="selectType('report', this)">
               <span class="type-name">報告書・業務日誌</span>
-              <span class="type-desc">検証事業の活動記録・報告</span>
-              <span class="type-route">▶ 係長確認（1段階）</span>
+              <span class="type-desc">活動記録・業務報告</span>
+              <span class="type-route">▶ 係長→課長補佐→課長→副署長→署長（5段階）</span>
             </button>
             <button class="type-btn" onclick="selectType('leave', this)">
               <span class="type-name">出張・休暇申請</span>
               <span class="type-desc">出張命令・各種休暇</span>
-              <span class="type-route">▶ 係長 → 課長（2段階）</span>
+              <span class="type-route">▶ 係長→課長補佐→課長（3段階）</span>
             </button>
             <button class="type-btn" onclick="selectType('purchase', this)">
-              <span class="type-name">物品購入・経費申請</span>
-              <span class="type-desc">備品・消耗品・経費精算</span>
-              <span class="type-route">▶ 5万円以上で課長承認追加</span>
+              <span class="type-name">購入伺い</span>
+              <span class="type-desc">物品購入・経費申請</span>
+              <span class="type-route">▶ 係長→課長補佐→課長→副署長→署長（5段階）</span>
+            </button>
+            <button class="type-btn" onclick="selectType('damage_report', this)">
+              <span class="type-name">破損報告</span>
+              <span class="type-desc">物品・設備の破損報告</span>
+              <span class="type-route">▶ 係長→課長補佐→課長→副署長→署長（5段階）</span>
+            </button>
+            <button class="type-btn" onclick="selectType('completion_report', this)">
+              <span class="type-name">完了報告</span>
+              <span class="type-desc">業務・作業の完了報告</span>
+              <span class="type-route">▶ 係長→課長補佐→課長→副署長→署長（5段階）</span>
             </button>
             <button class="type-btn" onclick="selectType('verification', this)">
               <span class="type-name">検証事業関連報告</span>
               <span class="type-desc">検証結果・症例報告</span>
-              <span class="type-route">▶ 係長 → 課長（2段階）</span>
+              <span class="type-route">▶ 係長→課長（2段階）</span>
             </button>
           </div>
           <div id="route-info" class="route-info"></div>
@@ -1001,7 +1011,9 @@
             <select id="form-type-select" onchange="loadFormConfig()">
               <option value="report">報告書・業務日誌</option>
               <option value="leave">出張・休暇申請</option>
-              <option value="purchase">物品購入・経費申請</option>
+              <option value="purchase">購入伺い</option>
+              <option value="damage_report">破損報告</option>
+              <option value="completion_report">完了報告</option>
               <option value="verification">検証事業関連報告</option>
             </select>
           </div>
@@ -1320,18 +1332,22 @@ function showPage(name) {
 // 書類種別選択
 // =====================================================
 const TYPE_LABELS = {
-  report:       '報告書・業務日誌',
-  leave:        '出張・休暇申請',
-  purchase:     '物品購入・経費申請',
-  verification: '検証事業関連報告',
-  other:        'その他',
+  report:            '報告書・業務日誌',
+  leave:             '出張・休暇申請',
+  purchase:          '購入伺い',
+  damage_report:     '破損報告',
+  completion_report: '完了報告',
+  verification:      '検証事業関連報告',
+  other:             'その他',
 };
 const ROUTE_DESCRIPTIONS = {
-  report:       '承認経路：<strong>係長</strong> → <strong>課長補佐</strong> → <strong>課長</strong> → <strong>副署長</strong> → <strong>署長</strong>（5段階）',
-  leave:        '承認経路：<strong>係長承認</strong> → <strong>課長承認</strong>（2段階）',
-  purchase:     '承認経路：<strong>係長承認</strong>（5万円以上は課長承認も追加）',
-  verification: '承認経路：<strong>係長確認</strong> → <strong>課長承認</strong>（2段階）',
-  other:        '承認経路：<strong>係長承認</strong>（1段階）',
+  report:            '承認経路：<strong>係長</strong> → <strong>課長補佐</strong> → <strong>課長</strong> → <strong>副署長</strong> → <strong>署長</strong>（5段階）',
+  leave:             '承認経路：<strong>係長</strong> → <strong>課長補佐</strong> → <strong>課長</strong>（3段階）',
+  purchase:          '承認経路：<strong>係長</strong> → <strong>課長補佐</strong> → <strong>課長</strong> → <strong>副署長</strong> → <strong>署長</strong>（5段階）',
+  damage_report:     '承認経路：<strong>係長</strong> → <strong>課長補佐</strong> → <strong>課長</strong> → <strong>副署長</strong> → <strong>署長</strong>（5段階）',
+  completion_report: '承認経路：<strong>係長</strong> → <strong>課長補佐</strong> → <strong>課長</strong> → <strong>副署長</strong> → <strong>署長</strong>（5段階）',
+  verification:      '承認経路：<strong>係長確認</strong> → <strong>課長承認</strong>（2段階）',
+  other:             '承認経路：<strong>係長承認</strong>（1段階）',
 };
 
 function selectType(type, btn) {
@@ -1561,18 +1577,26 @@ async function buildApproverSelector() {
   const stepRoles = STEP_ROLES[selectedType] || ['team_leader', 'assistant_chief', 'section_chief', 'admin'];
 
   // ステップ数に合わせた推奨ロール割り当て
-  // 報告書（5段階）の場合はステップごとに役職を割り当て
-  const reportStepRoles = [
+  // 書類種別ごとのステップ別推奨役職
+  const FIVE_STEP_ROLES = [
     ['team_leader'],
     ['assistant_chief'],
     ['section_chief'],
     ['deputy_chief'],
     ['chief'],
   ];
+  const THREE_STEP_ROLES = [
+    ['team_leader'],
+    ['assistant_chief'],
+    ['section_chief'],
+  ];
+  const isFive  = ['report','purchase','damage_report','completion_report'].includes(selectedType);
+  const isThree = ['leave'].includes(selectedType);
   const stepRoleMap = steps.map((label, i) => {
-    if (selectedType === 'report' && reportStepRoles[i]) return reportStepRoles[i];
+    if (isFive  && FIVE_STEP_ROLES[i])  return FIVE_STEP_ROLES[i];
+    if (isThree && THREE_STEP_ROLES[i]) return THREE_STEP_ROLES[i];
     if (steps.length === 1) return ['team_leader', 'assistant_chief'];
-    if (i === steps.length - 1) return ['section_chief', 'deputy_chief', 'chief', 'admin'];
+    if (i === steps.length - 1) return ['section_chief', 'deputy_chief', 'chief'];
     return ['team_leader', 'assistant_chief'];
   });
 
@@ -1678,10 +1702,13 @@ function buildConfirmTable() {
 }
 
 function getApprovalSteps(type, amount) {
-  if (type === 'report')       return ['係長確認', '課長補佐確認', '課長確認', '副署長確認', '署長決裁'];
-  if (type === 'leave')        return ['係長承認', '課長承認'];
-  if (type === 'purchase')     return amount >= 50000 ? ['係長承認', '課長承認'] : ['係長承認'];
-  if (type === 'verification') return ['係長確認', '課長承認'];
+  const FIVE = ['係長確認', '課長補佐確認', '課長確認', '副署長確認', '署長決裁'];
+  if (type === 'report')            return FIVE;
+  if (type === 'leave')             return ['係長承認', '課長補佐承認', '課長承認'];
+  if (type === 'purchase')          return FIVE;
+  if (type === 'damage_report')     return FIVE;
+  if (type === 'completion_report') return FIVE;
+  if (type === 'verification')      return ['係長確認', '課長承認'];
   return ['係長承認'];
 }
 
@@ -2677,18 +2704,38 @@ const DEFAULT_FORM_FIELDS = {
     { id:'notes',    label:'特記事項',   type:'textarea', required:false, placeholder:'気になった点・申し送りなど' },
   ],
   leave: [
-    { id:'title',      label:'件名',     type:'text',     required:true,  placeholder:'例：年次有給休暇 取得申請' },
-    { id:'leave_type', label:'申請種別', type:'select',   required:true,  placeholder:'年次有給,特別休暇,出張,代休,その他' },
-    { id:'start',      label:'開始日',   type:'date',     required:true,  placeholder:'' },
-    { id:'end',        label:'終了日',   type:'date',     required:true,  placeholder:'' },
-    { id:'reason',     label:'理由・目的', type:'textarea', required:false, placeholder:'出張の場合は目的地・用件を記入' },
+    { id:'title',      label:'件名',       type:'text',     required:true,  placeholder:'例：年次有給休暇 取得申請' },
+    { id:'leave_type', label:'申請種別',   type:'select',   required:true,  placeholder:'年次有給,特別休暇,出張,代休,その他' },
+    { id:'start',      label:'開始日',     type:'date',     required:true,  placeholder:'' },
+    { id:'end',        label:'終了日',     type:'date',     required:true,  placeholder:'' },
+    { id:'destination',label:'行先・目的地', type:'text',   required:false, placeholder:'出張の場合は行先を記入' },
+    { id:'reason',     label:'理由・目的', type:'textarea', required:false, placeholder:'出張の場合は目的・用件を具体的に記入' },
   ],
   purchase: [
-    { id:'title',         label:'件名',       type:'text',     required:true,  placeholder:'例：検証事業用 消耗品購入申請' },
-    { id:'amount',        label:'申請金額（円）', type:'number', required:true,  placeholder:'0' },
-    { id:'purchase_date', label:'購入希望日', type:'date',     required:false, placeholder:'' },
-    { id:'items',         label:'購入品目・数量', type:'textarea', required:true, placeholder:'品名・数量・単価を記入' },
-    { id:'reason',        label:'購入理由・用途', type:'textarea', required:false, placeholder:'なぜ購入が必要か' },
+    { id:'title',         label:'件名',         type:'text',     required:true,  placeholder:'例：救急資器材 購入伺い' },
+    { id:'purchase_date', label:'購入希望日',   type:'date',     required:false, placeholder:'' },
+    { id:'items',         label:'購入品目・数量', type:'textarea', required:true, placeholder:'品名・数量・単価・合計金額を記入' },
+    { id:'amount',        label:'合計金額（円）', type:'number', required:true,  placeholder:'0' },
+    { id:'reason',        label:'購入理由・必要性', type:'textarea', required:true, placeholder:'なぜ購入が必要か・用途を具体的に記入' },
+    { id:'vendor',        label:'購入先（業者）', type:'text',   required:false, placeholder:'例：〇〇商事' },
+  ],
+  damage_report: [
+    { id:'title',    label:'件名',       type:'text',     required:true,  placeholder:'例：車両破損報告' },
+    { id:'date',     label:'破損発生日', type:'date',     required:true,  placeholder:'' },
+    { id:'location', label:'破損場所',   type:'text',     required:true,  placeholder:'例：第一車庫' },
+    { id:'item',     label:'破損物品',   type:'text',     required:true,  placeholder:'例：救急車両 ○○号車 バンパー' },
+    { id:'content',  label:'破損状況',   type:'textarea', required:true,  placeholder:'どのような状況で破損したか具体的に記入' },
+    { id:'cause',    label:'破損原因',   type:'textarea', required:true,  placeholder:'原因を詳しく記入' },
+    { id:'action',   label:'応急処置',   type:'textarea', required:false, placeholder:'実施した応急処置があれば記入' },
+    { id:'cost',     label:'修理費用見積', type:'text',   required:false, placeholder:'例：約50,000円' },
+  ],
+  completion_report: [
+    { id:'title',    label:'件名',       type:'text',     required:true,  placeholder:'例：〇〇作業 完了報告' },
+    { id:'date',     label:'完了日',     type:'date',     required:true,  placeholder:'' },
+    { id:'task',     label:'業務・作業名', type:'text',   required:true,  placeholder:'例：救急資器材点検作業' },
+    { id:'content',  label:'実施内容',   type:'textarea', required:true,  placeholder:'実施した内容を具体的に記入' },
+    { id:'result',   label:'結果・成果', type:'textarea', required:true,  placeholder:'完了した結果・達成状況を記入' },
+    { id:'notes',    label:'特記事項',   type:'textarea', required:false, placeholder:'課題・次回への申し送りなど' },
   ],
   verification: [
     { id:'title',   label:'件名',         type:'text',     required:true,  placeholder:'例：令和6年度 検証症例報告 第5号' },
