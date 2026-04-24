@@ -404,6 +404,41 @@
     border-radius: 20px;
   }
 
+  /* 承認者選択 */
+  .approver-step {
+    margin-bottom: 16px;
+  }
+  .approver-step-label {
+    font-size: 12px; font-weight: 700; color: var(--gray-700);
+    margin-bottom: 6px; display: flex; align-items: center; gap: 8px;
+  }
+  .approver-step-num {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--red); color: var(--white);
+    font-size: 11px; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .approver-select-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 8px;
+  }
+  .approver-card {
+    border: 1.5px solid var(--gray-300); border-radius: var(--radius);
+    padding: 10px 12px; cursor: pointer; transition: all 0.15s;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .approver-card:hover { border-color: var(--red); }
+  .approver-card.selected {
+    border-color: var(--red); background: var(--red-light);
+  }
+  .approver-card input[type="radio"] {
+    width: 15px; height: 15px; accent-color: var(--red); flex-shrink: 0;
+  }
+  .approver-card .ac-info { flex: 1; min-width: 0; }
+  .approver-card .ac-name { font-size: 13px; font-weight: 600; }
+  .approver-card .ac-meta { font-size: 11px; color: var(--gray-500); margin-top: 2px; }
+
   /* ===================== 完了画面 ===================== */
   #complete-view {
     text-align: center;
@@ -766,7 +801,7 @@
           <div id="dynamic-form"></div>
         </div>
         <div class="btn-row">
-          <button class="btn btn-secondary" onclick="goStep(1)">← 戻る</button>
+          <button class="btn btn-secondary" onclick="window._editingDraftId ? (resetForm(), showPage('list')) : goStep(1)">← 戻る</button>
           <div class="btn-row-right">
             <button class="btn btn-ghost" onclick="saveDraft()">下書き保存</button>
             <button class="btn btn-primary" onclick="goStep(3)">確認画面へ →</button>
@@ -785,9 +820,17 @@
           <div class="card-title">申請内容の確認</div>
           <table class="confirm-table" id="confirm-table"></table>
         </div>
+        <!-- 承認者選択 -->
+        <div class="card">
+          <div class="card-title">承認者を選択<span class="tag">各ステップで1名ずつ</span></div>
+          <div id="approver-selector-area">
+            <div class="loading">読み込み中...</div>
+          </div>
+        </div>
+
         <div class="card" style="background:var(--red-light); border:1.5px solid #f5b7b1;">
           <div style="font-size:13px; color:var(--red-dark); line-height:1.7;">
-            ⚠ 提出後は内容の変更ができません。承認者へ通知メールが送信されます。内容をよく確認してから提出してください。
+            ⚠ 提出後は内容の変更ができません。選択した承認者へ通知が送信されます。内容をよく確認してから提出してください。
           </div>
         </div>
         <div class="btn-row">
@@ -969,6 +1012,22 @@
       <div id="approval-list"><div class="loading">読み込み中...</div></div>
     </div>
 
+  </div>
+</div>
+
+<!-- 差し戻しモーダル -->
+<div id="rejection-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:200;align-items:center;justify-content:center;">
+  <div style="background:var(--white);border-radius:10px;padding:28px;width:90%;max-width:440px;box-shadow:0 8px 32px rgba(0,0,0,0.18);">
+    <div style="font-size:15px;font-weight:700;margin-bottom:6px;color:var(--gray-900)">差し戻し理由の入力</div>
+    <div style="font-size:12px;color:var(--gray-500);margin-bottom:16px;">差し戻し理由は申請者に通知されます。</div>
+    <div class="form-row">
+      <label>差し戻し理由<span class="required">*</span></label>
+      <textarea id="rejection-reason" style="min-height:100px" placeholder="理由を具体的に記入してください"></textarea>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:16px;">
+      <button class="btn btn-secondary" onclick="closeRejectionModal()">キャンセル</button>
+      <button class="btn btn-primary" style="background:var(--red)" onclick="confirmRejection()">差し戻す</button>
+    </div>
   </div>
 </div>
 
@@ -1201,6 +1260,7 @@ function goStep(n) {
   if (n === 3) {
     if (!validateForm()) return;
     buildConfirmTable();
+    buildApproverSelector(); // 承認者選択UIを構築
   }
   document.getElementById('step1-view').style.display = n === 1 ? '' : 'none';
   document.getElementById('step2-view').style.display = n === 2 ? '' : 'none';
@@ -1366,6 +1426,126 @@ function collectFormData() {
 // =====================================================
 // 確認テーブル生成
 // =====================================================
+// 承認者選択UI構築
+let selectedApprovers = {}; // { step: userId }
+let approverUsers = [];
+
+async function buildApproverSelector() {
+  const area = document.getElementById('approver-selector-area');
+  if (!area) return;
+  area.innerHTML = '<div class="loading">読み込み中...</div>';
+
+  const amount = parseInt(formData.amount) || 0;
+  const steps  = getApprovalSteps(selectedType, amount);
+
+  // 承認者ロールのユーザーを取得
+  const { data: users } = await sb.from('users')
+    .select('id, name, department, role')
+    .eq('is_active', true)
+    .in('role', ['team_leader', 'assistant_chief', 'section_chief', 'admin'])
+    .order('role').order('name');
+
+  approverUsers = users || [];
+  selectedApprovers = {};
+
+  const ROLE_NAMES = {
+    team_leader: '係長', assistant_chief: '補佐',
+    section_chief: '課長', admin: '管理者'
+  };
+
+  // ステップごとに推奨ロールを設定
+  const STEP_ROLES = {
+    report:       ['team_leader', 'assistant_chief'],
+    leave:        ['team_leader', 'assistant_chief', 'section_chief'],
+    purchase:     amount >= 50000
+                    ? ['team_leader', 'assistant_chief', 'section_chief']
+                    : ['team_leader', 'assistant_chief'],
+    verification: ['team_leader', 'assistant_chief', 'section_chief'],
+  };
+
+  const stepRoles = STEP_ROLES[selectedType] || ['team_leader', 'assistant_chief', 'section_chief', 'admin'];
+
+  // ステップ数に合わせた推奨ロール割り当て
+  const stepRoleMap = steps.map((label, i) => {
+    if (steps.length === 1) return ['team_leader', 'assistant_chief'];
+    if (i === steps.length - 1) return ['section_chief', 'admin'];
+    return ['team_leader', 'assistant_chief'];
+  });
+
+  let html = '';
+  steps.forEach((stepLabel, i) => {
+    const stepNum = i + 1;
+    const recommendedRoles = stepRoleMap[i];
+    // 推奨ロールのユーザーを優先表示、他も表示
+    const primary   = approverUsers.filter(u => recommendedRoles.includes(u.role));
+    const secondary = approverUsers.filter(u => !recommendedRoles.includes(u.role));
+    const ordered   = [...primary, ...secondary];
+
+    html += `<div class="approver-step">
+      <div class="approver-step-label">
+        <span class="approver-step-num">${stepNum}</span>
+        ${stepLabel}
+        <span style="font-size:11px;color:var(--gray-500);font-weight:400;">
+          推奨：${recommendedRoles.map(r => ROLE_NAMES[r] || r).join('・')}
+        </span>
+      </div>
+      <div class="approver-select-grid">`;
+
+    ordered.forEach(u => {
+      html += `
+        <label class="approver-card" id="ac-${stepNum}-${u.id}"
+          onclick="selectApprover(${stepNum}, '${u.id}')">
+          <input type="radio" name="approver-step-${stepNum}" value="${u.id}"
+            onchange="selectApprover(${stepNum}, '${u.id}')">
+          <div class="ac-info">
+            <div class="ac-name">${u.name}</div>
+            <div class="ac-meta">${ROLE_NAMES[u.role] || u.role} ・ ${u.department}</div>
+          </div>
+        </label>`;
+    });
+
+    if (!ordered.length) {
+      html += `<div style="font-size:13px;color:var(--gray-500);padding:8px">承認可能なユーザーがいません</div>`;
+    }
+
+    html += `</div></div>`;
+    if (i < steps.length - 1) {
+      html += `<div style="text-align:center;color:var(--gray-500);font-size:18px;margin:-4px 0 8px;">↓</div>`;
+    }
+  });
+
+  area.innerHTML = html;
+}
+
+function selectApprover(step, uid) {
+  selectedApprovers[step] = uid;
+  // 選択状態のビジュアル更新
+  document.querySelectorAll(`[id^="ac-${step}-"]`).forEach(el => el.classList.remove('selected'));
+  document.getElementById(`ac-${step}-${uid}`)?.classList.add('selected');
+  // 確認テーブルの承認者欄を更新
+  updateConfirmApprovers();
+}
+
+function updateConfirmApprovers() {
+  const ROLE_NAMES = {
+    team_leader: '係長', assistant_chief: '補佐',
+    section_chief: '課長', admin: '管理者'
+  };
+  const amount = parseInt(formData.amount) || 0;
+  const steps  = getApprovalSteps(selectedType, amount);
+  const badges = steps.map((label, i) => {
+    const uid  = selectedApprovers[i + 1];
+    const user = approverUsers.find(u => u.id === uid);
+    if (user) {
+      return `<span class="route-badge">${label}：${user.name}（${ROLE_NAMES[user.role]||user.role}）</span>`;
+    }
+    return `<span class="route-badge" style="background:var(--gray-100);color:var(--gray-500)">${label}：未選択</span>`;
+  }).join('');
+
+  const row = document.querySelector('#confirm-table tr:last-child td');
+  if (row) row.innerHTML = `<div class="route-badges">${badges}</div>`;
+}
+
 function buildConfirmTable() {
   collectFormData();
   const amount = parseInt(formData.amount) || 0;
@@ -1411,11 +1591,17 @@ async function submitApplication() {
   }
 
   const btn = document.getElementById('btn-submit');
-  btn.disabled = true;
-  btn.textContent = '送信中...';
 
+  // 承認者が全ステップ選択されているか確認
   const amount = parseInt(formData.amount) || 0;
   const steps = getApprovalSteps(selectedType, amount);
+  const unselected = steps.filter((_, i) => !selectedApprovers[i + 1]);
+  if (unselected.length) {
+    showToast(`承認者をすべてのステップで選択してください`, 'error'); return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '送信中...';
 
   const payload = {
     type:         selectedType,
@@ -1437,13 +1623,16 @@ async function submitApplication() {
     return;
   }
 
-  // 承認レコード初期化
+  // 承認レコード初期化（選択した承認者を設定）
   const approvalRows = steps.map((_, i) => ({
     application_id: data.id,
-    step: i + 1,
-    action: 'pending',
+    step:           i + 1,
+    action:         'pending',
+    approver_id:    selectedApprovers[i + 1] || null,
   }));
   await sb.from('approvals').insert(approvalRows);
+  // 選択リセット
+  selectedApprovers = {};
 
   // 通知（承認者へ）は Edge Functions 経由で行う（今はスキップ）
 
@@ -1495,14 +1684,15 @@ function renderList(items) {
     return;
   }
   document.getElementById('app-list').innerHTML = items.map(a => `
-    <div class="app-item">
+    <div class="app-item" style="flex-wrap:wrap;">
       <div class="status-dot ${a.status}"></div>
       <div class="info">
         <div class="title">${a.title}</div>
         <div class="meta">${TYPE_LABELS[a.type] || a.type} ・ ${formatDate(a.created_at)}</div>
+        ${a.status === 'rejected' && a.rejection_reason ? `<div style="font-size:11px;color:var(--red);margin-top:3px;">差し戻し理由：${a.rejection_reason}</div>` : ''}
       </div>
       <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;">
-        ${a.status === 'draft' ? `<button class="btn btn-ghost" style="padding:5px 12px;font-size:12px" onclick="editDraft('${a.id}')">編集</button>` : ''}
+        ${(a.status === 'draft' || a.status === 'rejected') ? `<button class="btn btn-ghost" style="padding:5px 12px;font-size:12px" onclick="editDraft('${a.id}')">編集</button>` : ''}
         <button class="btn btn-secondary" style="padding:5px 12px;font-size:12px" onclick="duplicateApp('${a.id}')">複製</button>
         <button class="btn btn-secondary" style="padding:5px 12px;font-size:12px" onclick="exportPDF('${a.id}')">PDF</button>
         <div class="status-label ${a.status}" style="min-width:56px;text-align:right">${STATUS_LABEL[a.status] || a.status}</div>
@@ -1549,23 +1739,57 @@ async function loadApprovalList() {
     </div>`).join('');
 }
 
-async function approveApp(id, action) {
-  const comment = action === 'rejected' ? prompt('差し戻し理由を入力してください') : null;
-  if (action === 'rejected' && comment === null) return;
+// 差し戻しモーダル用変数
+let _pendingRejectionId = null;
 
+async function approveApp(id, action) {
+  if (action === 'rejected') {
+    // モーダルを開く
+    _pendingRejectionId = id;
+    document.getElementById('rejection-reason').value = '';
+    const modal = document.getElementById('rejection-modal');
+    modal.style.display = 'flex';
+    setTimeout(() => document.getElementById('rejection-reason').focus(), 50);
+    return;
+  }
+  await executeApproval(id, 'approved', null);
+}
+
+function closeRejectionModal() {
+  document.getElementById('rejection-modal').style.display = 'none';
+  _pendingRejectionId = null;
+}
+
+async function confirmRejection() {
+  const reason = document.getElementById('rejection-reason').value.trim();
+  if (!reason) { showToast('差し戻し理由を入力してください', 'error'); return; }
+  const id = _pendingRejectionId;
+  closeRejectionModal();
+  await executeApproval(id, 'rejected', reason);
+}
+
+async function executeApproval(id, action, reason) {
   const app = await sb.from('applications').select('*').eq('id', id).single();
   const step = app.data?.current_step || 1;
   const totalSteps = app.data?.total_steps || 1;
 
-  await sb.from('approvals').update({ action, comment, approver_id: currentUser.id, acted_at: new Date().toISOString() })
-    .eq('application_id', id).eq('step', step);
+  await sb.from('approvals').update({
+    action,
+    comment:     reason,
+    approver_id: currentUser.id,
+    acted_at:    new Date().toISOString()
+  }).eq('application_id', id).eq('step', step);
 
   const newStatus = action === 'rejected'
     ? 'rejected'
     : (step >= totalSteps ? 'approved' : 'pending');
   const newStep = action === 'approved' && step < totalSteps ? step + 1 : step;
 
-  await sb.from('applications').update({ status: newStatus, current_step: newStep }).eq('id', id);
+  // 差し戻し理由をapplicationsに保存（閲覧用）
+  const updatePayload = { status: newStatus, current_step: newStep };
+  if (action === 'rejected' && reason) updatePayload.rejection_reason = reason;
+
+  await sb.from('applications').update(updatePayload).eq('id', id);
   showToast(action === 'approved' ? '承認しました' : '差し戻しました', action === 'approved' ? 'success' : 'error');
   loadApprovalList();
 }
@@ -1576,13 +1800,19 @@ async function approveApp(id, action) {
 function resetForm() {
   selectedType = null; formData = {};
   window._editingDraftId = null;
+  window._editingStatus  = null;
+  document.getElementById('rejection-banner')?.remove();
   document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('selected'));
-  document.getElementById('route-info').classList.remove('visible');
+  const info = document.getElementById('route-info');
+  if (info) info.classList.remove('visible');
   document.getElementById('btn-next1').disabled = true;
   document.getElementById('step1-view').style.display = '';
   document.getElementById('step2-view').style.display = 'none';
   document.getElementById('step3-view').style.display = 'none';
   document.getElementById('complete-view').style.display = 'none';
+  // 保存ボタンのラベルをリセット
+  const draftBtn = document.querySelector('[onclick="saveDraft()"]');
+  if (draftBtn) draftBtn.textContent = '下書き保存';
 }
 
 function today() {
@@ -1599,20 +1829,22 @@ function formatDate(iso) {
 // =====================================================
 async function editDraft(id) {
   const { data, error } = await sb.from('applications').select('*').eq('id', id).single();
-  if (error || !data) { showToast('下書きの読み込みに失敗しました', 'error'); return; }
+  if (error || !data) { showToast('読み込みに失敗しました', 'error'); return; }
 
   // フォームにデータを復元
   selectedType = data.type;
   formData = { ...(data.content || {}), title: data.title };
   if (data.amount) formData.amount = data.amount;
   window._editingDraftId = id;
+  window._editingStatus  = data.status; // draft or rejected
 
   showPage('new');
 
-  // 書類種別選択 → そのままステップ2（入力画面）へ自動遷移
   setTimeout(() => {
+    // 書類種別ボタンを選択状態に
     document.querySelectorAll('.type-btn').forEach(btn => {
-      const btnType = btn.getAttribute('onclick')?.match(/'(\w+)'/)?.[1];
+      const m = btn.getAttribute('onclick')?.match(/selectType\('(\w+)'/);
+      const btnType = m ? m[1] : null;
       if (btnType === selectedType) {
         btn.classList.add('selected');
         const info = document.getElementById('route-info');
@@ -1623,13 +1855,28 @@ async function editDraft(id) {
         document.getElementById('btn-next1').disabled = false;
       }
     });
-    // ステップ2の入力画面を直接表示
-    buildDynamicForm(selectedType);
+
+    // ステップ2（入力画面）を直接表示
+    buildDynamicFormFromConfig(selectedType);
     document.getElementById('step1-view').style.display = 'none';
     document.getElementById('step2-view').style.display = '';
-    // 保存ボタンのラベルを「更新」に変更
+    document.getElementById('step3-view').style.display = 'none';
+    document.getElementById('complete-view').style.display = 'none';
+
+    // 差し戻し時：理由を表示バナー
+    const existingBanner = document.getElementById('rejection-banner');
+    if (existingBanner) existingBanner.remove();
+    if (data.status === 'rejected' && data.rejection_reason) {
+      const banner = document.createElement('div');
+      banner.id = 'rejection-banner';
+      banner.style.cssText = 'background:var(--red-light);border:1.5px solid #f5b7b1;border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:var(--red-dark);line-height:1.6;';
+      banner.innerHTML = `<strong>差し戻し理由：</strong>${data.rejection_reason}`;
+      document.getElementById('dynamic-form').insertAdjacentElement('beforebegin', banner);
+    }
+
+    // ボタンラベル変更
     const draftBtn = document.querySelector('[onclick="saveDraft()"]');
-    if (draftBtn) draftBtn.textContent = '変更を保存';
+    if (draftBtn) draftBtn.textContent = data.status === 'rejected' ? '修正して保存' : '変更を保存';
   }, 80);
 }
 
@@ -1658,13 +1905,26 @@ async function duplicateApp(id) {
 
 async function updateDraft(id) {
   collectFormData();
-  const { error } = await sb.from('applications').update({
-    type: selectedType, title: formData.title, content: formData,
-    amount: parseInt(formData.amount) || 0,
-  }).eq('id', id);
+  const isRejected = window._editingStatus === 'rejected';
+  const updatePayload = {
+    type:    selectedType,
+    title:   formData.title,
+    content: formData,
+    amount:  parseInt(formData.amount) || 0,
+  };
+  // 差し戻し申請は再提出時にpendingに戻す
+  if (isRejected) {
+    updatePayload.status = 'pending';
+    updatePayload.current_step = 1;
+    updatePayload.rejection_reason = null;
+  }
+  const { error } = await sb.from('applications').update(updatePayload).eq('id', id);
   if (error) { showToast('更新に失敗しました：' + error.message, 'error'); return; }
   window._editingDraftId = null;
-  showToast('下書きを更新しました', 'success');
+  window._editingStatus  = null;
+  // rejection-bannerを削除
+  document.getElementById('rejection-banner')?.remove();
+  showToast(isRejected ? '修正して再提出しました' : '下書きを更新しました', 'success');
   showPage('list');
 }
 
