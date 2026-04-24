@@ -6,6 +6,7 @@
 <title>電子決裁 申請フォーム</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
 <style>
   /* ===================== リセット・変数 ===================== */
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -545,6 +546,21 @@
   /* ===================== ローディング ===================== */
   .loading { text-align: center; padding: 40px; color: var(--gray-500); font-size: 14px; }
 
+  /* ===================== 詳細モーダル ===================== */
+  .detail-table { width:100%; border-collapse:collapse; font-size:13px; }
+  .detail-table tr { border-bottom:1px solid var(--gray-100); }
+  .detail-table tr:last-child { border-bottom:none; }
+  .detail-table th { width:110px; padding:9px 0; color:var(--gray-500); font-weight:600; vertical-align:top; font-size:12px; }
+  .detail-table td { padding:9px 0; color:var(--gray-900); line-height:1.6; white-space:pre-wrap; word-break:break-all; }
+  .approval-flow { display:flex; flex-direction:column; gap:8px; margin-top:4px; }
+  .approval-flow-item { display:flex; align-items:center; gap:10px; padding:8px 12px; background:var(--gray-100); border-radius:var(--radius); font-size:12px; }
+  .approval-flow-item .step-badge { width:22px; height:22px; border-radius:50%; background:var(--red); color:var(--white); font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .approval-flow-item .step-info { flex:1; }
+  .approval-flow-item .step-status { font-size:11px; font-weight:700; }
+  .step-status.approved { color:#27ae60; }
+  .step-status.rejected { color:var(--red); }
+  .step-status.pending  { color:#f39c12; }
+
   /* ===================== 管理者画面 ===================== */
   .admin-user-row {
     display:flex; align-items:center; gap:12px;
@@ -1012,6 +1028,23 @@
       <div id="approval-list"><div class="loading">読み込み中...</div></div>
     </div>
 
+  </div>
+</div>
+
+<!-- 申請詳細モーダル -->
+<div id="detail-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;align-items:flex-start;justify-content:center;overflow-y:auto;padding:24px 16px;">
+  <div style="background:var(--white);border-radius:10px;width:100%;max-width:600px;box-shadow:0 8px 32px rgba(0,0,0,0.2);margin:auto;">
+    <!-- モーダルヘッダー -->
+    <div style="background:var(--red);border-radius:10px 10px 0 0;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;">
+      <div style="color:var(--white);font-size:15px;font-weight:700;" id="detail-modal-title">申請詳細</div>
+      <button onclick="closeDetailModal()" style="background:rgba(255,255,255,0.2);border:none;color:var(--white);width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;">×</button>
+    </div>
+    <!-- モーダル本文 -->
+    <div style="padding:20px 24px 24px;" id="detail-modal-body">
+      <div class="loading">読み込み中...</div>
+    </div>
+    <!-- モーダルフッター -->
+    <div id="detail-modal-footer" style="padding:0 24px 20px;display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;"></div>
   </div>
 </div>
 
@@ -1686,12 +1719,13 @@ function renderList(items) {
   document.getElementById('app-list').innerHTML = items.map(a => `
     <div class="app-item" style="flex-wrap:wrap;">
       <div class="status-dot ${a.status}"></div>
-      <div class="info">
+      <div class="info" style="cursor:pointer" onclick="showDetail('${a.id}')">
         <div class="title">${a.title}</div>
         <div class="meta">${TYPE_LABELS[a.type] || a.type} ・ ${formatDate(a.created_at)}</div>
         ${a.status === 'rejected' && a.rejection_reason ? `<div style="font-size:11px;color:var(--red);margin-top:3px;">差し戻し理由：${a.rejection_reason}</div>` : ''}
       </div>
       <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;">
+        <button class="btn btn-secondary" style="padding:5px 12px;font-size:12px" onclick="showDetail('${a.id}')">詳細</button>
         ${(a.status === 'draft' || a.status === 'rejected') ? `<button class="btn btn-ghost" style="padding:5px 12px;font-size:12px" onclick="editDraft('${a.id}')">編集</button>` : ''}
         <button class="btn btn-secondary" style="padding:5px 12px;font-size:12px" onclick="duplicateApp('${a.id}')">複製</button>
         <button class="btn btn-secondary" style="padding:5px 12px;font-size:12px" onclick="exportPDF('${a.id}')">PDF</button>
@@ -1728,11 +1762,12 @@ async function loadApprovalList() {
   document.getElementById('approval-list').innerHTML = data.map(a => `
     <div class="app-item">
       <div class="status-dot pending"></div>
-      <div class="info">
+      <div class="info" style="cursor:pointer" onclick="showDetail('${a.id}')">
         <div class="title">${a.title}</div>
         <div class="meta">${a.users?.name}（${a.users?.department}）・${TYPE_LABELS[a.type]} ・ ${formatDate(a.created_at)}</div>
       </div>
       <div style="display:flex;gap:8px;flex-shrink:0">
+        <button class="btn btn-secondary" style="padding:6px 12px;font-size:12px" onclick="showDetail('${a.id}')">詳細</button>
         <button class="btn btn-primary" style="padding:6px 14px;font-size:12px" onclick="approveApp('${a.id}', 'approved')">承認</button>
         <button class="btn btn-secondary" style="padding:6px 14px;font-size:12px" onclick="approveApp('${a.id}', 'rejected')">差し戻し</button>
       </div>
@@ -1931,115 +1966,7 @@ async function updateDraft(id) {
 // =====================================================
 // PDF出力
 // =====================================================
-async function exportPDF(id) {
-  const { data: a, error } = await sb.from('applications').select('*').eq('id', id).single();
-  if (error || !a) { showToast('データの取得に失敗しました', 'error'); return; }
-
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-
-  // フォント（日本語非対応のため英数字・記号で代替表示）
-  const W = 210, margin = 20, lineH = 7;
-  let y = margin;
-
-  // ヘッダー
-  doc.setFillColor(192, 57, 43);
-  doc.rect(0, 0, W, 18, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(12);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Electronic Approval Document', margin, 12);
-
-  // タイトル
-  y = 30;
-  doc.setTextColor(30, 30, 30);
-  doc.setFontSize(16);
-  doc.setFont('helvetica', 'bold');
-  const titleText = a.title || 'No Title';
-  doc.text(titleText.substring(0, 40), margin, y);
-  y += 10;
-
-  // ステータスバッジ
-  const statusColors = { pending:[243,156,18], approved:[39,174,96], rejected:[192,57,43], draft:[150,150,150] };
-  const [r,g,b] = statusColors[a.status] || [150,150,150];
-  doc.setFillColor(r, g, b);
-  doc.roundedRect(margin, y, 36, 7, 2, 2, 'F');
-  doc.setTextColor(255,255,255);
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'bold');
-  doc.text(STATUS_LABEL[a.status] || a.status, margin + 3, y + 5);
-  y += 14;
-
-  // 区切り線
-  doc.setDrawColor(200, 200, 200);
-  doc.line(margin, y, W - margin, y);
-  y += 8;
-
-  // 基本情報テーブル
-  const rows = [
-    ['Type', TYPE_LABELS[a.type] || a.type],
-    ['Date', formatDate(a.created_at)],
-    ['Applicant', currentUserProfile?.name || ''],
-    ['Department', currentUserProfile?.department || ''],
-    ['Step', `${a.current_step} / ${a.total_steps}`],
-  ];
-  if (a.amount > 0) rows.push(['Amount', `JPY ${a.amount.toLocaleString()}`]);
-
-  doc.setFontSize(9);
-  rows.forEach(([key, val]) => {
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(120, 120, 120);
-    doc.text(key, margin, y);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(30, 30, 30);
-    doc.text(String(val).substring(0, 60), margin + 35, y);
-    y += lineH;
-  });
-
-  y += 4;
-  doc.setDrawColor(200, 200, 200);
-  doc.line(margin, y, W - margin, y);
-  y += 8;
-
-  // 本文内容
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(120, 120, 120);
-  doc.setFontSize(9);
-  doc.text('Content / Details', margin, y);
-  y += 6;
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(30, 30, 30);
-  doc.setFontSize(9);
-
-  const content_data = a.content || {};
-  const contentFields = ['content','items','reason','result','notes','location'];
-  contentFields.forEach(field => {
-    if (content_data[field]) {
-      const lines = doc.splitTextToSize(content_data[field], W - margin * 2);
-      lines.slice(0, 10).forEach(line => {
-        if (y > 270) { doc.addPage(); y = margin; }
-        doc.text(line, margin, y);
-        y += lineH - 1;
-      });
-      y += 3;
-    }
-  });
-
-  // フッター
-  const pageCount = doc.getNumberOfPages();
-  for (let i = 1; i <= pageCount; i++) {
-    doc.setPage(i);
-    doc.setFontSize(8);
-    doc.setTextColor(150, 150, 150);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Generated: ${new Date().toLocaleDateString('ja-JP')}`, margin, 290);
-    doc.text(`Page ${i} / ${pageCount}`, W - margin, 290, { align: 'right' });
-    doc.text('EMS Verification System', W / 2, 290, { align: 'center' });
-  }
-
-  doc.save(`approval_${a.id.slice(0,8)}.pdf`);
-  showToast('PDFを出力しました', 'success');
-}
+// exportPDF: 上部に新実装済み
 
 // =====================================================
 // メール送信ページ
@@ -2511,6 +2438,225 @@ function addFormType() {
   if (sel && !sel.querySelector(`option[value="${key}"]`)) {
     sel.innerHTML += `<option value="${key}">${label}</option>`;
   }
+}
+
+// =====================================================
+// 申請詳細モーダル
+// =====================================================
+async function showDetail(id) {
+  const modal = document.getElementById('detail-modal');
+  const body  = document.getElementById('detail-modal-body');
+  const footer = document.getElementById('detail-modal-footer');
+  modal.style.display = 'flex';
+  body.innerHTML = '<div class="loading">読み込み中...</div>';
+  footer.innerHTML = '';
+
+  // 申請データ + 承認履歴を取得
+  const [{ data: a }, { data: approvals }] = await Promise.all([
+    sb.from('applications').select('*, users!applicant_id(name, department, email)').eq('id', id).single(),
+    sb.from('approvals').select('*, users!approver_id(name, department, role)').eq('application_id', id).order('step'),
+  ]);
+  if (!a) { body.innerHTML = '<div class="loading">データの取得に失敗しました</div>'; return; }
+
+  document.getElementById('detail-modal-title').textContent = a.title;
+
+  const ROLE_NAMES = { staff:'一般職員', team_leader:'係長', assistant_chief:'補佐', section_chief:'課長', admin:'管理者' };
+  const STEP_STATUS = { approved:'承認済み', rejected:'差し戻し', pending:'承認待ち' };
+
+  // 基本情報テーブル
+  const c = a.content || {};
+  const fieldRows = [
+    ['書類種別',  TYPE_LABELS[a.type] || a.type],
+    ['申請日',    formatDate(a.created_at)],
+    ['申請者',    `${a.users?.name}（${a.users?.department}）`],
+    ['ステータス', `<span class="status-label ${a.status}">${STATUS_LABEL[a.status]||a.status}</span>`],
+    a.amount > 0 ? ['金額', `¥${a.amount.toLocaleString()}`] : null,
+    c.date        ? ['報告日',    c.date]        : null,
+    c.location    ? ['場所',      c.location]    : null,
+    c.leave_type  ? ['申請種別',  c.leave_type]  : null,
+    c.start       ? ['開始日',    c.start]       : null,
+    c.end         ? ['終了日',    c.end]         : null,
+    c.case_no     ? ['症例番号',  c.case_no]     : null,
+    c.content     ? ['内容',      c.content]     : null,
+    c.items       ? ['購入品目',  c.items]       : null,
+    c.reason      ? ['理由',      c.reason]      : null,
+    c.result      ? ['結果・考察', c.result]     : null,
+    c.notes       ? ['特記事項',  c.notes]       : null,
+    a.rejection_reason ? ['差し戻し理由', `<span style="color:var(--red)">${a.rejection_reason}</span>`] : null,
+  ].filter(Boolean);
+
+  const tableHTML = `<table class="detail-table">
+    ${fieldRows.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('')}
+  </table>`;
+
+  // 承認フロー
+  let flowHTML = '';
+  if (approvals?.length) {
+    flowHTML = `<div style="margin-top:16px">
+      <div style="font-size:12px;font-weight:700;color:var(--gray-700);margin-bottom:8px;">承認フロー</div>
+      <div class="approval-flow">`;
+    approvals.forEach(ap => {
+      const approverName = ap.users ? `${ap.users.name}（${ROLE_NAMES[ap.users.role]||ap.users.role}）` : '未割当';
+      const actedAt = ap.acted_at ? formatDate(ap.acted_at) : '';
+      const commentHTML = ap.comment ? `<div style="color:var(--red);font-size:11px;margin-top:2px;">理由：${ap.comment}</div>` : '';
+      flowHTML += `<div class="approval-flow-item">
+        <div class="step-badge">${ap.step}</div>
+        <div class="step-info">
+          <div style="font-weight:600">${approverName}</div>
+          ${commentHTML}
+          ${actedAt ? `<div style="color:var(--gray-500);font-size:11px">${actedAt}</div>` : ''}
+        </div>
+        <div class="step-status ${ap.action}">${STEP_STATUS[ap.action]||ap.action}</div>
+      </div>`;
+    });
+    flowHTML += `</div></div>`;
+  }
+
+  body.innerHTML = tableHTML + flowHTML;
+
+  // フッターボタン
+  let footerHTML = `<button class="btn btn-secondary" onclick="exportPDF('${id}')">PDF出力</button>`;
+  // 承認者向け：承認・差し戻しボタン
+  if (a.status === 'pending' && currentUserProfile &&
+      ['team_leader','assistant_chief','section_chief','admin'].includes(currentUserProfile.role)) {
+    footerHTML += `
+      <button class="btn btn-primary" onclick="closeDetailModal();approveApp('${id}','approved')">承認</button>
+      <button class="btn btn-secondary" style="color:var(--red);border-color:var(--red)" onclick="closeDetailModal();approveApp('${id}','rejected')">差し戻し</button>`;
+  }
+  // 差し戻し・下書き：編集ボタン
+  if ((a.status === 'draft' || a.status === 'rejected') && a.applicant_id === currentUser?.id) {
+    footerHTML += `<button class="btn btn-ghost" onclick="closeDetailModal();editDraft('${id}')">編集</button>`;
+  }
+  footerHTML += `<button class="btn btn-secondary" onclick="closeDetailModal()">閉じる</button>`;
+  footer.innerHTML = footerHTML;
+}
+
+function closeDetailModal() {
+  document.getElementById('detail-modal').style.display = 'none';
+}
+
+// モーダル外クリックで閉じる
+document.addEventListener('click', e => {
+  const modal = document.getElementById('detail-modal');
+  if (modal && e.target === modal) closeDetailModal();
+  const rejModal = document.getElementById('rejection-modal');
+  if (rejModal && e.target === rejModal) closeRejectionModal();
+});
+
+// =====================================================
+// PDF出力（HTML印刷方式で日本語対応）
+// =====================================================
+async function exportPDF(id) {
+  const { data: a, error } = await sb.from('applications')
+    .select('*, users!applicant_id(name, department)').eq('id', id).single();
+  if (error || !a) { showToast('データの取得に失敗しました', 'error'); return; }
+
+  const { data: approvals } = await sb.from('approvals')
+    .select('*, users!approver_id(name, role)').eq('application_id', id).order('step');
+
+  const ROLE_NAMES = { staff:'一般職員', team_leader:'係長', assistant_chief:'補佐', section_chief:'課長', admin:'管理者' };
+  const STEP_STATUS = { approved:'承認済み', rejected:'差し戻し', pending:'承認待ち' };
+  const c = a.content || {};
+
+  const fieldRows = [
+    ['書類種別',   TYPE_LABELS[a.type] || a.type],
+    ['申請日',     formatDate(a.created_at)],
+    ['申請者',     `${a.users?.name || ''}（${a.users?.department || ''}）`],
+    ['ステータス',  STATUS_LABEL[a.status] || a.status],
+    a.amount > 0  ? ['申請金額',  `¥${a.amount.toLocaleString()}`] : null,
+    c.date        ? ['報告日',    c.date]       : null,
+    c.location    ? ['場所',      c.location]   : null,
+    c.leave_type  ? ['申請種別',  c.leave_type] : null,
+    c.start       ? ['開始日',    c.start]      : null,
+    c.end         ? ['終了日',    c.end]        : null,
+    c.case_no     ? ['症例番号',  c.case_no]    : null,
+    c.content     ? ['内容',      c.content]    : null,
+    c.items       ? ['購入品目',  c.items]      : null,
+    c.reason      ? ['理由',      c.reason]     : null,
+    c.result      ? ['結果・考察', c.result]    : null,
+    c.notes       ? ['特記事項',  c.notes]      : null,
+    a.rejection_reason ? ['差し戻し理由', a.rejection_reason] : null,
+  ].filter(Boolean);
+
+  const approvalRows = (approvals || []).map(ap => [
+    `ステップ${ap.step}`,
+    ap.users ? `${ap.users.name}（${ROLE_NAMES[ap.users.role]||ap.users.role}）` : '未割当',
+    STEP_STATUS[ap.action] || ap.action,
+    ap.comment || '',
+    ap.acted_at ? formatDate(ap.acted_at) : '',
+  ]);
+
+  // 印刷用HTMLを生成してiframeで印刷
+  const printHTML = `<!DOCTYPE html>
+<html lang="ja"><head>
+<meta charset="UTF-8">
+<title>${a.title}</title>
+<style>
+  body { font-family: 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', 'Meiryo', sans-serif; font-size: 11pt; color: #1a1a1a; margin: 0; padding: 0; }
+  .header { background: #C0392B; color: #fff; padding: 12px 20px; }
+  .header h1 { font-size: 14pt; margin: 0 0 2px; }
+  .header .sub { font-size: 9pt; opacity: 0.85; }
+  .body { padding: 16px 20px; }
+  .section-title { font-size: 10pt; font-weight: bold; color: #7a7a7a; border-bottom: 1.5px solid #e0e0e0; padding-bottom: 4px; margin: 16px 0 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 10pt; }
+  table th { width: 90px; text-align: left; color: #7a7a7a; font-weight: 600; padding: 6px 0; vertical-align: top; }
+  table td { padding: 6px 0; vertical-align: top; white-space: pre-wrap; word-break: break-all; }
+  table tr { border-bottom: 1px solid #f0f0f0; }
+  table tr:last-child { border-bottom: none; }
+  .flow-item { display: flex; align-items: flex-start; gap: 10px; padding: 6px 10px; background: #f5f5f5; border-radius: 4px; margin-bottom: 6px; font-size: 10pt; }
+  .flow-num { background: #C0392B; color: #fff; width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 9pt; font-weight: bold; flex-shrink: 0; }
+  .flow-status { font-weight: bold; margin-left: auto; }
+  .status-approved { color: #27ae60; }
+  .status-rejected { color: #C0392B; }
+  .status-pending  { color: #f39c12; }
+  .footer { margin-top: 24px; padding-top: 8px; border-top: 1px solid #e0e0e0; font-size: 8pt; color: #aaa; display: flex; justify-content: space-between; }
+  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+</style>
+</head><body>
+<div class="header">
+  <h1>${a.title}</h1>
+  <div class="sub">電子決裁システム ／ 救急救命士 検証事業</div>
+</div>
+<div class="body">
+  <div class="section-title">申請内容</div>
+  <table>
+    ${fieldRows.map(([k,v]) => `<tr><th>${k}</th><td>${String(v).replace(/
+/g,'<br>')}</td></tr>`).join('')}
+  </table>
+
+  ${approvalRows.length ? `
+  <div class="section-title">承認フロー</div>
+  ${approvalRows.map(([step, name, status, comment, date]) => `
+    <div class="flow-item">
+      <div class="flow-num">${step.replace('ステップ','')}</div>
+      <div style="flex:1">
+        <div>${name}</div>
+        ${comment ? `<div style="color:#C0392B;font-size:9pt">理由：${comment}</div>` : ''}
+        ${date ? `<div style="color:#aaa;font-size:9pt">${date}</div>` : ''}
+      </div>
+      <div class="flow-status status-${status==='承認済み'?'approved':status==='差し戻し'?'rejected':'pending'}">${status}</div>
+    </div>`).join('')}` : ''}
+
+  <div class="footer">
+    <span>出力日：${new Date().toLocaleDateString('ja-JP')}</span>
+    <span>申請番号：${a.id.slice(0,8).toUpperCase()}</span>
+  </div>
+</div>
+</body></html>`;
+
+  // iframeで印刷ダイアログを開く
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:fixed;width:0;height:0;border:none;left:-9999px';
+  document.body.appendChild(iframe);
+  iframe.contentDocument.open();
+  iframe.contentDocument.write(printHTML);
+  iframe.contentDocument.close();
+  iframe.contentWindow.focus();
+  setTimeout(() => {
+    iframe.contentWindow.print();
+    setTimeout(() => document.body.removeChild(iframe), 2000);
+  }, 500);
+  showToast('印刷ダイアログを開きました（PDF保存可）', 'success');
 }
 
 function showToast(msg, type = '') {
